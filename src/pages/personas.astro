@@ -1,0 +1,184 @@
+---
+import { actions } from 'astro:actions';
+import AppShell from '../layouts/AppShell.astro';
+import Card from '../components/ui/Card.astro';
+import Badge from '../components/ui/Badge.astro';
+import LifeIcon from '../components/ui/LifeIcon.astro';
+import { db } from '../db/client';
+import { contactos, fechasImportantes } from '../db/schema';
+import {
+  diffDays,
+  estadoPorDias,
+  formatCountdown,
+  formatDayMonth,
+  formatLastContact,
+  nextAnnualOccurrence,
+  yearsAtNextOccurrence,
+  type Estado,
+} from '../lib/dates';
+
+const crearFechaResult = Astro.getActionResult(actions.personas.crearFecha);
+const crearContactoResult = Astro.getActionResult(actions.personas.crearContacto);
+
+// ---------- Fechas importantes ----------
+
+const fechasAll = await db.select().from(fechasImportantes);
+
+const fechas = fechasAll
+  .map((f) => {
+    let targetIso: string;
+    let detalleTexto: string | null;
+
+    if (f.tipo === 'evento') {
+      targetIso = f.fecha;
+      detalleTexto = f.detalle;
+    } else {
+      targetIso = nextAnnualOccurrence(f.fecha);
+      const years = yearsAtNextOccurrence(f.fecha);
+      detalleTexto = f.detalle ?? (f.tipo === 'cumpleanos' ? `${years} años` : `${years} años juntos`);
+    }
+
+    return {
+      ...f,
+      targetIso,
+      detalleTexto,
+      dias: diffDays(targetIso),
+    };
+  })
+  .sort((a, b) => a.dias - b.dias);
+
+// ---------- Contactos ----------
+
+const contactosAll = await db.select().from(contactos);
+
+const contactosOrdenados = [...contactosAll].sort((a, b) => {
+  if (a.ultimoContacto === null && b.ultimoContacto === null) return 0;
+  if (a.ultimoContacto === null) return -1;
+  if (b.ultimoContacto === null) return 1;
+  return a.ultimoContacto < b.ultimoContacto ? -1 : a.ultimoContacto > b.ultimoContacto ? 1 : 0;
+});
+
+const contactosVista = contactosOrdenados.map((c) => {
+  const diasSinContacto = c.ultimoContacto ? -diffDays(c.ultimoContacto) : null;
+  const estado: Estado = diasSinContacto === null || diasSinContacto > 13 ? 'pronto' : 'ok';
+  return { ...c, estado };
+});
+---
+
+<AppShell activeId="personas">
+  <div class="grid">
+    <Card title="Fechas importantes" icon="campana">
+      {
+        fechas.length === 0 ? (
+          <p class="vacio">Aún no has añadido ninguna fecha importante.</p>
+        ) : (
+          <ul class="lista">
+            {fechas.map((f) => (
+              <li>
+                <div class="lista-item plano">
+                  <span class="lista-texto">
+                    <strong>{f.nombre}</strong>
+                    {f.detalleTexto ? ` · ${f.detalleTexto}` : ''}
+                  </span>
+                  <span class="lista-fecha">{formatDayMonth(f.targetIso)}</span>
+                  <Badge estado={estadoPorDias(f.dias, 7)}>{formatCountdown(f.dias)}</Badge>
+                  <form method="POST" action={actions.personas.borrarFecha}>
+                    <input type="hidden" name="id" value={f.id} />
+                    <button class="icon-btn" type="submit" aria-label="Eliminar fecha">
+                      <LifeIcon name="cerrar" size={14} />
+                    </button>
+                  </form>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+
+      <form class="qa-form" method="POST" action={actions.personas.crearFecha}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Nombre</span>
+            <input type="text" name="nombre" required />
+          </label>
+          <label class="qa-field">
+            <span>Tipo</span>
+            <select name="tipo" required>
+              <option value="cumpleanos">Cumpleaños</option>
+              <option value="aniversario">Aniversario</option>
+              <option value="evento">Evento</option>
+            </select>
+          </label>
+          <label class="qa-field">
+            <span>Fecha</span>
+            <input type="date" name="fecha" required />
+          </label>
+          <label class="qa-field">
+            <span>Detalle</span>
+            <input type="text" name="detalle" placeholder="Opcional" />
+          </label>
+        </div>
+        {crearFechaResult?.error && <p class="form-error">{crearFechaResult.error.message}</p>}
+        <button class="qa-save" type="submit">
+          Añadir fecha
+        </button>
+      </form>
+    </Card>
+
+    <Card title="Mantener el contacto" icon="personas" meta="Último contacto">
+      {
+        contactosVista.length === 0 ? (
+          <p class="vacio">Aún no has añadido contactos.</p>
+        ) : (
+          <ul class="lista">
+            {contactosVista.map((c) => (
+              <li>
+                <div class="lista-item plano">
+                  <span class="avatar" aria-hidden="true">
+                    {c.nombre.charAt(0).toUpperCase()}
+                  </span>
+                  <span class="lista-texto">
+                    <strong>{c.nombre}</strong>
+                    {c.relacion ? ` · ${c.relacion}` : ''}
+                  </span>
+                  <Badge estado={c.estado}>{formatLastContact(c.ultimoContacto)}</Badge>
+                  <form method="POST" action={actions.personas.marcarContactoHoy}>
+                    <input type="hidden" name="id" value={c.id} />
+                    <button class="btn-suave" type="submit" aria-label="Marcar contacto hoy">
+                      Hoy
+                    </button>
+                  </form>
+                  <form method="POST" action={actions.personas.borrarContacto}>
+                    <input type="hidden" name="id" value={c.id} />
+                    <button class="icon-btn" type="submit" aria-label="Eliminar contacto">
+                      <LifeIcon name="cerrar" size={14} />
+                    </button>
+                  </form>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+
+      <p class="vacio peq">Registra una llamada o quedada desde «+ Registrar → Contacto».</p>
+
+      <form class="qa-form" method="POST" action={actions.personas.crearContacto}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Nombre</span>
+            <input type="text" name="nombre" required />
+          </label>
+          <label class="qa-field">
+            <span>Relación</span>
+            <input type="text" name="relacion" placeholder="Familia, amigo/a…" />
+          </label>
+        </div>
+        {crearContactoResult?.error && <p class="form-error">{crearContactoResult.error.message}</p>}
+        <button class="qa-save" type="submit">
+          Añadir contacto
+        </button>
+      </form>
+    </Card>
+  </div>
+</AppShell>

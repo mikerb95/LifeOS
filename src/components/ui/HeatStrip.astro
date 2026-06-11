@@ -1,0 +1,24 @@
+---
+interface Props {
+  data: (0 | 1 | 2 | 3)[];
+  weeks?: number;
+  label?: string;
+}
+
+const { data, weeks = 18, label } = Astro.props;
+
+const cols: (0 | 1 | 2 | 3)[][] = [];
+for (let wk = 0; wk < weeks; wk++) cols.push(data.slice(wk * 7, wk * 7 + 7));
+---
+
+<div class="heat" role="img" aria-label={label || 'Actividad reciente'}>
+  {
+    cols.map((col, i) => (
+      <div class="heat-col" data-week={i}>
+        {col.map((lvl) => (
+          <span class={`heat-cell l${lvl}`} />
+        ))}
+      </div>
+    ))
+  }
+</div>

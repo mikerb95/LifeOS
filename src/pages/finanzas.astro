@@ -1,0 +1,384 @@
+---
+import { desc } from 'drizzle-orm';
+import { actions } from 'astro:actions';
+import AppShell from '../layouts/AppShell.astro';
+import Card from '../components/ui/Card.astro';
+import BigStat from '../components/ui/BigStat.astro';
+import Delta from '../components/ui/Delta.astro';
+import Sparkline from '../components/ui/Sparkline.astro';
+import PairBars from '../components/ui/PairBars.astro';
+import Badge from '../components/ui/Badge.astro';
+import LifeIcon from '../components/ui/LifeIcon.astro';
+import { db } from '../db/client';
+import { deudas, impuestos, movimientos, patrimonioLogs } from '../db/schema';
+import { diffDays, estadoPorDias, formatCountdown, formatDayMonth, todayISO } from '../lib/dates';
+import { fmtEur, fmtEur2, fmtNum } from '../lib/format';
+
+const guardarPatrimonioResult = Astro.getActionResult(actions.finanzas.guardarPatrimonio);
+const crearMovimientoResult = Astro.getActionResult(actions.finanzas.crearMovimiento);
+const crearDeudaResult = Astro.getActionResult(actions.finanzas.crearDeuda);
+const crearImpuestoResult = Astro.getActionResult(actions.finanzas.crearImpuesto);
+
+const MES_CORTO = new Intl.DateTimeFormat('es-ES', { month: 'short', timeZone: 'UTC' });
+const MES_LARGO = new Intl.DateTimeFormat('es-ES', { month: 'long', timeZone: 'UTC' });
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function mesCortoLabel(yyyymm: string): string {
+  const s = MES_CORTO.format(new Date(`${yyyymm}-01T00:00:00Z`)).replace('.', '');
+  return cap(s);
+}
+
+function ultimosMeses(n: number): string[] {
+  const [y0, m0] = todayISO().slice(0, 7).split('-').map(Number);
+  const out: string[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    let y = y0;
+    let m = m0 - i;
+    while (m <= 0) {
+      m += 12;
+      y -= 1;
+    }
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+  }
+  return out;
+}
+
+// ---------- Patrimonio neto ----------
+
+const patrimonioDesc = await db.select().from(patrimonioLogs).orderBy(desc(patrimonioLogs.fecha)).limit(12);
+const patrimonioAsc = [...patrimonioDesc].reverse();
+
+const actual = patrimonioAsc.at(-1)?.valor ?? null;
+const todasDeudas = await db.select().from(deudas);
+const deudaTotal = todasDeudas.reduce((s, d) => s + d.montoActual, 0);
+
+const referenciaIdx = Math.max(0, patrimonioAsc.length - 1 - 3);
+const referencia = patrimonioAsc.length >= 2 ? patrimonioAsc[referenciaIdx]?.valor ?? null : null;
+const patrimonioDelta = actual !== null && referencia !== null ? actual - referencia : 0;
+
+// ---------- Flujo del mes ----------
+
+const todosMovimientos = await db.select().from(movimientos);
+const mesActual = todayISO().slice(0, 7);
+
+const movimientosMes = todosMovimientos.filter((m) => m.fecha.slice(0, 7) === mesActual);
+const ingresos = movimientosMes.filter((m) => m.importe > 0).reduce((s, m) => s + m.importe, 0);
+const gastos = movimientosMes.filter((m) => m.importe < 0).reduce((s, m) => s + Math.abs(m.importe), 0);
+const balance = ingresos - gastos;
+
+const meses6 = ultimosMeses(6);
+const flujoPorMes = new Map<string, { ing: number; gas: number }>();
+for (const mes of meses6) flujoPorMes.set(mes, { ing: 0, gas: 0 });
+for (const m of todosMovimientos) {
+  const mes = m.fecha.slice(0, 7);
+  const acc = flujoPorMes.get(mes);
+  if (!acc) continue;
+  if (m.importe > 0) acc.ing += m.importe;
+  else acc.gas += Math.abs(m.importe);
+}
+const flujo6 = meses6.map((mes) => ({ mes: mesCortoLabel(mes), ing: flujoPorMes.get(mes)!.ing, gas: flujoPorMes.get(mes)!.gas }));
+
+// ---------- Gastos por categoría ----------
+
+const nombreMesActual = cap(MES_LARGO.format(new Date(`${mesActual}-01T00:00:00Z`)));
+
+const categoriasMap = new Map<string, number>();
+for (const m of movimientosMes) {
+  if (m.importe < 0) {
+    categoriasMap.set(m.categoria, (categoriasMap.get(m.categoria) ?? 0) + Math.abs(m.importe));
+  }
+}
+const categorias = [...categoriasMap.entries()]
+  .map(([nombre, valor]) => ({ nombre, valor }))
+  .sort((a, b) => b.valor - a.valor);
+const maxCat = Math.max(...categorias.map((c) => c.valor), 1);
+
+// ---------- Deudas ----------
+
+const listaDeudas = await db.select().from(deudas).orderBy(deudas.id);
+
+// ---------- Impuestos y plazos ----------
+
+const listaImpuestos = await db.select().from(impuestos).orderBy(impuestos.fecha);
+
+// ---------- Últimos movimientos ----------
+
+const ultimosMovimientos = await db
+  .select()
+  .from(movimientos)
+  .orderBy(desc(movimientos.fecha), desc(movimientos.id))
+  .limit(10);
+---
+
+<AppShell activeId="finanzas">
+  <div class="grid">
+    <Card title="Patrimonio neto" icon="finanzas" span={2}>
+      {
+        patrimonioAsc.length === 0 ? (
+          <p class="vacio">Aún no has registrado tu patrimonio.</p>
+        ) : (
+          <>
+            <div class="row-stats">
+              <BigStat label="Total" value={fmtNum(actual!)} unit="€">
+                {patrimonioAsc.length >= 2 ? (
+                  <Delta value={patrimonioDelta} unit="€" goodWhen="up" label="últimos meses" />
+                ) : (
+                  <Delta value={0} unit="€" goodWhen="up" label="últimos meses" />
+                )}
+              </BigStat>
+              <BigStat label="Deuda" value={fmtNum(deudaTotal)} unit="€">
+                <span class="delta neutral">
+                  {todasDeudas.length > 0 ? `${todasDeudas.length} deuda${todasDeudas.length === 1 ? '' : 's'}` : 'sin deudas'}
+                </span>
+              </BigStat>
+            </div>
+            <Sparkline data={patrimonioAsc.map((p) => p.valor)} w={560} h={88} />
+            <p class="chart-note">Evolución · últimos 12 meses</p>
+          </>
+        )
+      }
+
+      <form class="qa-form" method="POST" action={actions.finanzas.guardarPatrimonio}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Registrar patrimonio del mes</span>
+            <input type="month" name="fecha" value={todayISO().slice(0, 7)} required />
+          </label>
+          <label class="qa-field">
+            <span>Valor (€)</span>
+            <input type="number" name="valor" step="0.01" required />
+          </label>
+        </div>
+        {guardarPatrimonioResult?.error && <p class="form-error">{guardarPatrimonioResult.error.message}</p>}
+        <button class="qa-save" type="submit">Guardar</button>
+      </form>
+    </Card>
+
+    <Card title="Flujo del mes" icon="gasto">
+      {
+        todosMovimientos.length === 0 ? (
+          <p class="vacio">Aún no hay movimientos registrados.</p>
+        ) : (
+          <>
+            <div class="kv-rows">
+              <div class="kv">
+                <span>Ingresos</span>
+                <strong class="pos">+{fmtEur(ingresos)}</strong>
+              </div>
+              <div class="kv">
+                <span>Gastos</span>
+                <strong>−{fmtEur(gastos)}</strong>
+              </div>
+              <div class="kv total">
+                <span>Balance</span>
+                <strong class={balance >= 0 ? 'pos' : ''}>
+                  {balance >= 0 ? '+' : '−'}
+                  {fmtEur(Math.abs(balance))}
+                </strong>
+              </div>
+            </div>
+            <PairBars data={flujo6} />
+            <p class="chart-note">
+              <span class="leyenda ing"></span> Ingresos · <span class="leyenda gas"></span> Gastos · últimos 6 meses
+            </p>
+          </>
+        )
+      }
+    </Card>
+
+    <Card title="Gastos por categoría" icon="hoy" meta={nombreMesActual}>
+      {
+        categorias.length === 0 ? (
+          <p class="vacio peq">Aún no hay gastos este mes.</p>
+        ) : (
+          <div class="cat-list">
+            {categorias.map((c) => (
+              <div class="cat-row">
+                <span class="cat-nombre">{c.nombre}</span>
+                <div class="cat-track">
+                  <div class="cat-fill" style={`width:${(c.valor / maxCat) * 100}%`} />
+                </div>
+                <span class="cat-importe">{fmtEur(c.valor)}</span>
+              </div>
+            ))}
+          </div>
+        )
+      }
+    </Card>
+
+    <Card title="Deudas" icon="gasto">
+      {
+        listaDeudas.length === 0 ? (
+          <p class="vacio">Sin deudas registradas.</p>
+        ) : (
+          <ul class="lista">
+            {listaDeudas.map((d) => (
+              <li>
+                <div class="lista-item plano">
+                  <span class="lista-texto">
+                    <strong>{d.nombre}</strong> · {fmtEur(d.montoActual)}
+                    {d.cuota ? ` · cuota ${fmtEur(d.cuota)}/mes` : ''}
+                  </span>
+                  <span class="lista-fecha">{d.fechaFin ?? ''}</span>
+                  <form method="POST" action={actions.finanzas.borrarDeuda}>
+                    <input type="hidden" name="id" value={d.id} />
+                    <button class="icon-btn" type="submit" aria-label="Eliminar deuda">
+                      <LifeIcon name="cerrar" size={14} />
+                    </button>
+                  </form>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+
+      <form class="qa-form" method="POST" action={actions.finanzas.crearDeuda}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Nombre</span>
+            <input type="text" name="nombre" required />
+          </label>
+          <label class="qa-field">
+            <span>Monto actual (€)</span>
+            <input type="number" name="montoActual" step="0.01" required />
+          </label>
+          <label class="qa-field">
+            <span>Cuota mensual (€)</span>
+            <input type="text" inputmode="decimal" name="cuota" />
+          </label>
+          <label class="qa-field">
+            <span>Fecha fin</span>
+            <input type="date" name="fechaFin" />
+          </label>
+        </div>
+        {crearDeudaResult?.error && <p class="form-error">{crearDeudaResult.error.message}</p>}
+        <button class="qa-save" type="submit">Añadir deuda</button>
+      </form>
+    </Card>
+
+    <Card title="Impuestos y plazos" icon="campana">
+      {
+        listaImpuestos.length === 0 ? (
+          <p class="vacio">Aún no hay impuestos ni plazos registrados.</p>
+        ) : (
+          <ul class="lista">
+            {listaImpuestos.map((t) => (
+              <li>
+                <div class="lista-item plano">
+                  <span class="lista-texto">
+                    <strong>{t.nombre}</strong>
+                  </span>
+                  <Badge estado={t.pagado ? 'ok' : estadoPorDias(diffDays(t.fecha), 30)}>
+                    {t.pagado ? 'Pagado' : formatCountdown(diffDays(t.fecha))}
+                  </Badge>
+                  {!t.pagado && (
+                    <form method="POST" action={actions.finanzas.marcarImpuestoPagado}>
+                      <input type="hidden" name="id" value={t.id} />
+                      <button class="btn-suave" type="submit">Marcar pagado</button>
+                    </form>
+                  )}
+                  <form method="POST" action={actions.finanzas.borrarImpuesto}>
+                    <input type="hidden" name="id" value={t.id} />
+                    <button class="icon-btn" type="submit" aria-label="Eliminar plazo">
+                      <LifeIcon name="cerrar" size={14} />
+                    </button>
+                  </form>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+
+      <form class="qa-form" method="POST" action={actions.finanzas.crearImpuesto}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Nombre</span>
+            <input type="text" name="nombre" required />
+          </label>
+          <label class="qa-field">
+            <span>Fecha</span>
+            <input type="date" name="fecha" required />
+          </label>
+        </div>
+        {crearImpuestoResult?.error && <p class="form-error">{crearImpuestoResult.error.message}</p>}
+        <button class="qa-save" type="submit">Añadir plazo</button>
+      </form>
+    </Card>
+
+    <Card title="Últimos movimientos" icon="doc" span={2}>
+      {
+        ultimosMovimientos.length === 0 ? (
+          <p class="vacio">Aún no hay movimientos registrados.</p>
+        ) : (
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Concepto</th>
+                <th>Categoría</th>
+                <th class="num">Importe</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {ultimosMovimientos.map((m) => (
+                <tr>
+                  <td class="dim">{formatDayMonth(m.fecha)}</td>
+                  <td>{m.concepto}</td>
+                  <td class="dim">{m.categoria}</td>
+                  <td class={'num ' + (m.importe > 0 ? 'pos' : '')}>
+                    {m.importe > 0 ? '+' : ''}
+                    {fmtEur2(m.importe)}
+                  </td>
+                  <td>
+                    <form method="POST" action={actions.finanzas.borrarMovimiento}>
+                      <input type="hidden" name="id" value={m.id} />
+                      <button class="icon-btn" type="submit" aria-label="Eliminar movimiento">
+                        <LifeIcon name="cerrar" size={14} />
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+      }
+
+      <form class="qa-form" method="POST" action={actions.finanzas.crearMovimiento}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Fecha</span>
+            <input type="date" name="fecha" value={todayISO()} required />
+          </label>
+          <label class="qa-field">
+            <span>Concepto</span>
+            <input type="text" name="concepto" required />
+          </label>
+          <label class="qa-field">
+            <span>Categoría</span>
+            <input type="text" name="categoria" required />
+          </label>
+          <label class="qa-field">
+            <span>Tipo</span>
+            <select name="tipo">
+              <option value="gasto">Gasto</option>
+              <option value="ingreso">Ingreso</option>
+            </select>
+          </label>
+          <label class="qa-field">
+            <span>Importe (€)</span>
+            <input type="number" name="importe" step="0.01" min="0" required />
+          </label>
+        </div>
+        {crearMovimientoResult?.error && <p class="form-error">{crearMovimientoResult.error.message}</p>}
+        <button class="qa-save" type="submit">Añadir movimiento</button>
+      </form>
+    </Card>
+  </div>
+</AppShell>

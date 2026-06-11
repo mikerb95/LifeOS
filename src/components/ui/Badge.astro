@@ -1,0 +1,11 @@
+---
+import type { Estado } from '../../lib/dates';
+
+interface Props {
+  estado: Estado;
+}
+
+const { estado } = Astro.props;
+---
+
+<span class={`badge ${estado}`}><slot /></span>

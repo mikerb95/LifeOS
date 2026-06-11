@@ -1,0 +1,413 @@
+---
+import { asc, desc } from 'drizzle-orm';
+import { actions } from 'astro:actions';
+import AppShell from '../layouts/AppShell.astro';
+import Card from '../components/ui/Card.astro';
+import BigStat from '../components/ui/BigStat.astro';
+import Sparkline from '../components/ui/Sparkline.astro';
+import Meter from '../components/ui/Meter.astro';
+import Badge from '../components/ui/Badge.astro';
+import LifeIcon from '../components/ui/LifeIcon.astro';
+import { db } from '../db/client';
+import { documentos, mascotaPesoLogs, mascotaTareas, vehiculoLogs, vehiculoTareas } from '../db/schema';
+import { diffDays, estadoPorDias, formatCountdown, formatDayMonth, todayISO } from '../lib/dates';
+import { clamp01, fmtNum } from '../lib/format';
+import { getSetting, SETTINGS_KEYS, type MascotaPerfil, type VehiculoPerfil } from '../lib/settings';
+
+const fecha = todayISO();
+
+// ---------- Mascota ----------
+
+const mascotaPerfil = await getSetting<MascotaPerfil | null>(SETTINGS_KEYS.mascotaPerfil, null);
+
+const guardarMascotaPerfilResult = Astro.getActionResult(actions.responsabilidades.guardarMascotaPerfil);
+const registrarPesoMascotaResult = Astro.getActionResult(actions.responsabilidades.registrarPesoMascota);
+const crearMascotaTareaResult = Astro.getActionResult(actions.responsabilidades.crearMascotaTarea);
+
+let pesosMascota: { valorKg: number }[] = [];
+let mascotaTareasList: (typeof mascotaTareas.$inferSelect)[] = [];
+
+if (mascotaPerfil) {
+  pesosMascota = await db
+    .select({ valorKg: mascotaPesoLogs.valorKg })
+    .from(mascotaPesoLogs)
+    .orderBy(desc(mascotaPesoLogs.fecha))
+    .limit(12);
+  pesosMascota.reverse();
+
+  mascotaTareasList = await db.select().from(mascotaTareas).orderBy(asc(mascotaTareas.fechaVenc));
+}
+
+// ---------- Vehículo ----------
+
+const vehiculoPerfil = await getSetting<VehiculoPerfil | null>(SETTINGS_KEYS.vehiculoPerfil, null);
+
+const guardarVehiculoPerfilResult = Astro.getActionResult(actions.responsabilidades.guardarVehiculoPerfil);
+const crearVehiculoTareaResult = Astro.getActionResult(actions.responsabilidades.crearVehiculoTarea);
+
+let kmActual: number | null = null;
+let kmDelta = 0;
+let vehiculoTareasList: (typeof vehiculoTareas.$inferSelect)[] = [];
+let meterValue = 0;
+let meterSub = '';
+
+if (vehiculoPerfil) {
+  const [ultimoLog] = await db
+    .select()
+    .from(vehiculoLogs)
+    .orderBy(desc(vehiculoLogs.fecha), desc(vehiculoLogs.id))
+    .limit(1);
+  kmActual = ultimoLog?.km ?? null;
+
+  if (kmActual !== null) {
+    const mesActual = fecha.slice(0, 7); // YYYY-MM
+    const logsDelMes = await db
+      .select()
+      .from(vehiculoLogs)
+      .orderBy(asc(vehiculoLogs.fecha), asc(vehiculoLogs.id));
+    const primerLogDelMes = logsDelMes.find((l) => l.fecha.slice(0, 7) === mesActual);
+    const kmInicioMes = primerLogDelMes ? primerLogDelMes.km : kmActual;
+    kmDelta = kmActual - kmInicioMes;
+  }
+
+  const kmReferencia = kmActual ?? vehiculoPerfil.aceiteUltimoKm;
+  meterValue = clamp01(
+    vehiculoPerfil.aceiteIntervaloKm > 0
+      ? (kmReferencia - vehiculoPerfil.aceiteUltimoKm) / vehiculoPerfil.aceiteIntervaloKm
+      : 0,
+  );
+  meterSub = `${fmtNum(kmReferencia - vehiculoPerfil.aceiteUltimoKm, 0)} / ${fmtNum(vehiculoPerfil.aceiteIntervaloKm, 0)} km`;
+
+  vehiculoTareasList = await db.select().from(vehiculoTareas).orderBy(asc(vehiculoTareas.fechaVenc));
+}
+
+// ---------- Documentos ----------
+
+const crearDocumentoResult = Astro.getActionResult(actions.responsabilidades.crearDocumento);
+
+const documentosList = await db.select().from(documentos);
+documentosList.sort((a, b) => {
+  if (a.fechaVenc === null && b.fechaVenc === null) return 0;
+  if (a.fechaVenc === null) return 1;
+  if (b.fechaVenc === null) return -1;
+  return a.fechaVenc < b.fechaVenc ? -1 : a.fechaVenc > b.fechaVenc ? 1 : 0;
+});
+---
+
+<AppShell activeId="responsabilidades">
+  <div class="grid">
+    <Card title={mascotaPerfil?.nombre ?? 'Mascota'} icon="pata" meta={mascotaPerfil?.tipo}>
+      {
+        !mascotaPerfil ? (
+          <>
+            <p class="vacio">Configura el perfil de tu mascota para empezar.</p>
+            <form class="qa-form" method="POST" action={actions.responsabilidades.guardarMascotaPerfil}>
+              <div class="form-grid">
+                <label class="qa-field">
+                  <span>Nombre</span>
+                  <input type="text" name="nombre" required />
+                </label>
+                <label class="qa-field">
+                  <span>Tipo</span>
+                  <input type="text" name="tipo" placeholder="Border collie · 4 años" required />
+                </label>
+              </div>
+              {guardarMascotaPerfilResult?.error && <p class="form-error">{guardarMascotaPerfilResult.error.message}</p>}
+              <button class="qa-save" type="submit">
+                Guardar perfil
+              </button>
+            </form>
+          </>
+        ) : (
+          <>
+            {
+              pesosMascota.length === 0 ? (
+                <p class="vacio peq">Sin registros de peso. Apúntalo abajo.</p>
+              ) : (
+                <>
+                  <BigStat label="Peso" value={fmtNum(pesosMascota[pesosMascota.length - 1].valorKg)} unit="kg">
+                    <span class="delta neutral">últimos registros</span>
+                  </BigStat>
+                  <Sparkline data={pesosMascota.map((p) => p.valorKg)} w={260} h={44} />
+                  <p class="chart-note">Últimos {pesosMascota.length} controles</p>
+                </>
+              )
+            }
+
+            <form class="qa-form" method="POST" action={actions.responsabilidades.registrarPesoMascota}>
+              <div class="form-grid">
+                <label class="qa-field">
+                  <span>Fecha</span>
+                  <input type="date" name="fecha" value={fecha} required />
+                </label>
+                <label class="qa-field">
+                  <span>Peso (kg)</span>
+                  <input type="number" name="valorKg" step="0.1" required />
+                </label>
+              </div>
+              {registrarPesoMascotaResult?.error && <p class="form-error">{registrarPesoMascotaResult.error.message}</p>}
+              <button class="qa-save" type="submit">
+                Registrar peso
+              </button>
+            </form>
+
+            {
+              mascotaTareasList.length === 0 ? (
+                <p class="vacio peq">Sin tareas pendientes.</p>
+              ) : (
+                <ul class="lista compacta">
+                  {mascotaTareasList.map((t) => (
+                    <li>
+                      <div class="lista-item plano">
+                        <span class="lista-texto">{t.nombre}</span>
+                        <Badge estado={estadoPorDias(diffDays(t.fechaVenc), 7)}>{formatCountdown(diffDays(t.fechaVenc))}</Badge>
+                        <form method="POST" action={actions.responsabilidades.borrarMascotaTarea}>
+                          <input type="hidden" name="id" value={t.id} />
+                          <button class="icon-btn" type="submit" aria-label="Eliminar tarea">
+                            <LifeIcon name="cerrar" size={14} />
+                          </button>
+                        </form>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )
+            }
+
+            <form class="qa-form" method="POST" action={actions.responsabilidades.crearMascotaTarea}>
+              <div class="form-grid">
+                <label class="qa-field">
+                  <span>Tarea</span>
+                  <input type="text" name="nombre" required />
+                </label>
+                <label class="qa-field">
+                  <span>Vencimiento</span>
+                  <input type="date" name="fechaVenc" required />
+                </label>
+                <label class="qa-field">
+                  <span>Frecuencia (días)</span>
+                  <input type="text" inputmode="numeric" name="frecuenciaDias" placeholder="días, opcional" />
+                </label>
+              </div>
+              {crearMascotaTareaResult?.error && <p class="form-error">{crearMascotaTareaResult.error.message}</p>}
+              <button class="qa-save" type="submit">
+                Añadir tarea
+              </button>
+            </form>
+
+            <details>
+              <summary>Editar perfil</summary>
+              <form class="qa-form" method="POST" action={actions.responsabilidades.guardarMascotaPerfil}>
+                <div class="form-grid">
+                  <label class="qa-field">
+                    <span>Nombre</span>
+                    <input type="text" name="nombre" value={mascotaPerfil.nombre} required />
+                  </label>
+                  <label class="qa-field">
+                    <span>Tipo</span>
+                    <input type="text" name="tipo" value={mascotaPerfil.tipo} required />
+                  </label>
+                </div>
+                <button class="qa-save" type="submit">
+                  Guardar perfil
+                </button>
+              </form>
+            </details>
+          </>
+        )
+      }
+    </Card>
+
+    <Card title={vehiculoPerfil?.nombre ?? 'Vehículo'} icon="coche" meta={vehiculoPerfil?.matricula}>
+      {
+        !vehiculoPerfil ? (
+          <>
+            <p class="vacio">Configura el perfil de tu vehículo para empezar.</p>
+            <form class="qa-form" method="POST" action={actions.responsabilidades.guardarVehiculoPerfil}>
+              <div class="form-grid">
+                <label class="qa-field">
+                  <span>Nombre</span>
+                  <input type="text" name="nombre" required />
+                </label>
+                <label class="qa-field">
+                  <span>Matrícula</span>
+                  <input type="text" name="matricula" required />
+                </label>
+                <label class="qa-field">
+                  <span>Intervalo de aceite (km)</span>
+                  <input type="number" name="aceiteIntervaloKm" step="1" required />
+                </label>
+                <label class="qa-field">
+                  <span>Último cambio (km)</span>
+                  <input type="number" name="aceiteUltimoKm" step="1" required />
+                </label>
+              </div>
+              {guardarVehiculoPerfilResult?.error && <p class="form-error">{guardarVehiculoPerfilResult.error.message}</p>}
+              <button class="qa-save" type="submit">
+                Guardar perfil
+              </button>
+            </form>
+          </>
+        ) : (
+          <>
+            {
+              kmActual !== null ? (
+                <BigStat label="Kilometraje" value={fmtNum(kmActual, 0)} unit="km">
+                  {kmDelta > 0 && <span class="delta neutral">+{fmtNum(kmDelta, 0)} km este mes</span>}
+                </BigStat>
+              ) : (
+                <p class="vacio peq">Sin registros de kilometraje. Usa «+ Registrar → Vehículo».</p>
+              )
+            }
+
+            <Meter value={meterValue} label="Intervalo de aceite" sub={meterSub} />
+
+            {
+              vehiculoTareasList.length === 0 ? (
+                <p class="vacio peq">Sin tareas pendientes.</p>
+              ) : (
+                <ul class="lista compacta">
+                  {vehiculoTareasList.map((t) => (
+                    <li>
+                      <div class="lista-item plano">
+                        <span class="lista-texto">{t.nombre}</span>
+                        <Badge estado={estadoPorDias(diffDays(t.fechaVenc), 14)}>{formatCountdown(diffDays(t.fechaVenc))}</Badge>
+                        <form method="POST" action={actions.responsabilidades.borrarVehiculoTarea}>
+                          <input type="hidden" name="id" value={t.id} />
+                          <button class="icon-btn" type="submit" aria-label="Eliminar tarea">
+                            <LifeIcon name="cerrar" size={14} />
+                          </button>
+                        </form>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )
+            }
+
+            <form class="qa-form" method="POST" action={actions.responsabilidades.crearVehiculoTarea}>
+              <div class="form-grid">
+                <label class="qa-field">
+                  <span>Tarea</span>
+                  <input type="text" name="nombre" required />
+                </label>
+                <label class="qa-field">
+                  <span>Vencimiento</span>
+                  <input type="date" name="fechaVenc" required />
+                </label>
+                <label class="qa-field">
+                  <span>Frecuencia (días)</span>
+                  <input type="text" inputmode="numeric" name="frecuenciaDias" placeholder="días, opcional" />
+                </label>
+              </div>
+              {crearVehiculoTareaResult?.error && <p class="form-error">{crearVehiculoTareaResult.error.message}</p>}
+              <button class="qa-save" type="submit">
+                Añadir tarea
+              </button>
+            </form>
+
+            <details>
+              <summary>Editar perfil</summary>
+              <form class="qa-form" method="POST" action={actions.responsabilidades.guardarVehiculoPerfil}>
+                <div class="form-grid">
+                  <label class="qa-field">
+                    <span>Nombre</span>
+                    <input type="text" name="nombre" value={vehiculoPerfil.nombre} required />
+                  </label>
+                  <label class="qa-field">
+                    <span>Matrícula</span>
+                    <input type="text" name="matricula" value={vehiculoPerfil.matricula} required />
+                  </label>
+                  <label class="qa-field">
+                    <span>Intervalo de aceite (km)</span>
+                    <input type="number" name="aceiteIntervaloKm" step="1" value={vehiculoPerfil.aceiteIntervaloKm} required />
+                  </label>
+                  <label class="qa-field">
+                    <span>Último cambio (km)</span>
+                    <input type="number" name="aceiteUltimoKm" step="1" value={vehiculoPerfil.aceiteUltimoKm} required />
+                  </label>
+                </div>
+                <button class="qa-save" type="submit">
+                  Guardar perfil
+                </button>
+              </form>
+            </details>
+          </>
+        )
+      }
+    </Card>
+
+    <Card title="Documentos" icon="doc" span={2}>
+      {
+        documentosList.length === 0 ? (
+          <p class="vacio">Aún no has añadido ningún documento.</p>
+        ) : (
+          <div class="doc-grid">
+            {documentosList.map((doc) => {
+              const dias = doc.fechaVenc ? diffDays(doc.fechaVenc) : null;
+              const estado = doc.fechaVenc ? estadoPorDias(dias!, 60) : 'ok';
+              const etiqueta = !doc.fechaVenc ? 'Sin caducidad' : estado === 'pronto' ? 'Renovar pronto' : 'Al día';
+              return (
+                <div class="doc-item">
+                  <span class="lista-ico">
+                    <LifeIcon name="doc" size={15} />
+                  </span>
+                  <div class="doc-info">
+                    <strong>{doc.nombre}</strong>
+                    <span>{doc.detalle ?? (doc.fechaVenc ? `Caduca ${formatDayMonth(doc.fechaVenc)}` : '')}</span>
+                  </div>
+                  <Badge estado={estado}>{etiqueta}</Badge>
+                  <form method="POST" action={actions.responsabilidades.borrarDocumento}>
+                    <input type="hidden" name="id" value={doc.id} />
+                    <button class="icon-btn" type="submit" aria-label="Eliminar documento">
+                      <LifeIcon name="cerrar" size={14} />
+                    </button>
+                  </form>
+                </div>
+              );
+            })}
+          </div>
+        )
+      }
+
+      <form class="qa-form" method="POST" action={actions.responsabilidades.crearDocumento}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Nombre</span>
+            <input type="text" name="nombre" required />
+          </label>
+          <label class="qa-field">
+            <span>Detalle</span>
+            <input type="text" name="detalle" />
+          </label>
+          <label class="qa-field">
+            <span>Vencimiento</span>
+            <input type="date" name="fechaVenc" />
+          </label>
+        </div>
+        {crearDocumentoResult?.error && <p class="form-error">{crearDocumentoResult.error.message}</p>}
+        <button class="qa-save" type="submit">
+          Añadir documento
+        </button>
+      </form>
+    </Card>
+  </div>
+</AppShell>
+
+<style>
+  .lista-item.plano {
+    text-decoration: none;
+  }
+  details > summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-2);
+    margin-top: 4px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line-soft);
+  }
+  details[open] > summary {
+    margin-bottom: 12px;
+  }
+</style>

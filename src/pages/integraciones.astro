@@ -1,0 +1,40 @@
+---
+import AppShell from '../layouts/AppShell.astro';
+import Card from '../components/ui/Card.astro';
+
+const FUENTES = [
+  { nombre: 'Strava', tipo: 'Entrenamientos y actividad física' },
+  { nombre: 'Banco principal', tipo: 'Movimientos y saldos' },
+  { nombre: 'Báscula inteligente', tipo: 'Peso y composición corporal' },
+  { nombre: 'Broker de inversión', tipo: 'Patrimonio e inversiones' },
+  { nombre: 'Apple Salud / Google Fit', tipo: 'Sueño y frecuencia cardiaca' },
+  { nombre: 'Goodreads', tipo: 'Lecturas y progreso' },
+];
+---
+
+<AppShell activeId="integraciones">
+  <div class="grid">
+    <Card title="Fuentes de datos" icon="integraciones" span={2} meta="Tus datos se quedan en tu cuenta">
+      <div class="int-grid">
+        {
+          FUENTES.map((f) => (
+            <div class="int-item">
+              <div class="int-info">
+                <strong>{f.nombre}</strong>
+                <span>{f.tipo}</span>
+              </div>
+              <button type="button" class="int-btn desconectado" disabled aria-disabled="true" title="Próximamente">
+                <span class="punto" />
+                Próximamente
+              </button>
+            </div>
+          ))
+        }
+      </div>
+      <p class="vacio peq">
+        Las conexiones automáticas llegarán más adelante. Por ahora, registra tus datos manualmente desde <strong>+ Registrar</strong> o
+        cada módulo.
+      </p>
+    </Card>
+  </div>
+</AppShell>

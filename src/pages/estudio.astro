@@ -1,0 +1,188 @@
+---
+import { desc } from 'drizzle-orm';
+import { actions } from 'astro:actions';
+import AppShell from '../layouts/AppShell.astro';
+import Card from '../components/ui/Card.astro';
+import HeatStrip from '../components/ui/HeatStrip.astro';
+import BigStat from '../components/ui/BigStat.astro';
+import Meter from '../components/ui/Meter.astro';
+import LifeIcon from '../components/ui/LifeIcon.astro';
+import { db } from '../db/client';
+import { cursos, estudioSesiones } from '../db/schema';
+import { addDays, currentStreak, heatmapSeries, relativeDayLabel, todayISO } from '../lib/dates';
+import { fmtNum } from '../lib/format';
+import { getSetting, SETTINGS_KEYS } from '../lib/settings';
+
+const crearCursoResult = Astro.getActionResult(actions.estudio.crearCurso);
+const guardarObjetivoResult = Astro.getActionResult(actions.estudio.guardarObjetivo);
+
+const listaCursos = await db.select().from(cursos).orderBy(cursos.id);
+const sesiones = await db.select().from(estudioSesiones);
+
+const minutosPorDia = new Map<string, number>();
+for (const s of sesiones) {
+  minutosPorDia.set(s.fecha, (minutosPorDia.get(s.fecha) ?? 0) + s.minutos);
+}
+const estudioHeat = heatmapSeries(minutosPorDia, [0, 30, 60]);
+
+const horasObjetivoSemana = await getSetting(SETTINGS_KEYS.horasObjetivoSemana, 5);
+
+const desdeIso = addDays(todayISO(), -6);
+const minutosSemana = sesiones.filter((s) => s.fecha >= desdeIso).reduce((acc, s) => acc + s.minutos, 0);
+const horasSemana = minutosSemana / 60;
+
+const racha = currentStreak(new Set(sesiones.map((s) => s.fecha)));
+
+const recientes = await db
+  .select()
+  .from(estudioSesiones)
+  .orderBy(desc(estudioSesiones.fecha), desc(estudioSesiones.id))
+  .limit(8);
+---
+
+<AppShell activeId="estudio">
+  <div class="grid">
+    <Card title="Formación en curso" icon="estudio">
+      {
+        listaCursos.length === 0 ? (
+          <p class="vacio">Aún no has añadido ningún curso.</p>
+        ) : (
+          listaCursos.map((curso) => (
+            <div class="curso">
+              <Meter
+                value={curso.progreso}
+                label={curso.nombre}
+                sub={`${Math.round(curso.progreso * 100)} %${curso.plataforma ? ' · ' + curso.plataforma : ''}`}
+              />
+              {curso.siguiente && <p class="chart-note">Siguiente: {curso.siguiente}</p>}
+              <div class="form-actions">
+                <form class="curso-progreso" method="POST" action={actions.estudio.actualizarCurso}>
+                  <input type="hidden" name="id" value={curso.id} />
+                  <label class="qa-field">
+                    <span>Progreso %</span>
+                    <input type="number" name="progreso" min="0" max="100" step="1" value={Math.round(curso.progreso * 100)} />
+                  </label>
+                  <button class="btn-suave" type="submit">
+                    Actualizar
+                  </button>
+                </form>
+                <form method="POST" action={actions.estudio.borrarCurso}>
+                  <input type="hidden" name="id" value={curso.id} />
+                  <button class="icon-btn" type="submit" aria-label="Eliminar curso">
+                    <LifeIcon name="cerrar" size={14} />
+                  </button>
+                </form>
+              </div>
+            </div>
+          ))
+        )
+      }
+
+      <form class="qa-form curso-nuevo" method="POST" action={actions.estudio.crearCurso}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Nombre</span>
+            <input type="text" name="nombre" required />
+          </label>
+          <label class="qa-field">
+            <span>Plataforma</span>
+            <input type="text" name="plataforma" placeholder="Udemy, Coursera…" />
+          </label>
+          <label class="qa-field">
+            <span>Progreso %</span>
+            <input type="number" name="progreso" min="0" max="100" step="1" placeholder="0" />
+          </label>
+          <label class="qa-field">
+            <span>Próximo paso</span>
+            <input type="text" name="siguiente" placeholder="Módulo 3: …" />
+          </label>
+        </div>
+        {crearCursoResult?.error && <p class="form-error">{crearCursoResult.error.message}</p>}
+        <button class="qa-save" type="submit">
+          Añadir curso
+        </button>
+      </form>
+    </Card>
+
+    <Card title="Constancia de estudio" icon="crecimiento">
+      <HeatStrip data={estudioHeat} label="Días de estudio, últimos 4 meses" />
+      <p class="chart-note">Últimas 18 semanas</p>
+      <div class="row-stats">
+        <BigStat label="Esta semana" value={fmtNum(horasSemana)} unit={`/${horasObjetivoSemana} h`} />
+        <BigStat label="Racha" value={String(racha)} unit="días" />
+      </div>
+      <form class="form-actions objetivo-form" method="POST" action={actions.estudio.guardarObjetivo}>
+        <label class="qa-field">
+          <span>Objetivo semanal (h)</span>
+          <input type="number" name="horasObjetivoSemana" min="0" step="0.5" value={horasObjetivoSemana} />
+        </label>
+        <button class="btn-suave" type="submit">
+          Guardar
+        </button>
+      </form>
+      {guardarObjetivoResult?.error && <p class="form-error">{guardarObjetivoResult.error.message}</p>}
+    </Card>
+
+    <Card title="Sesiones recientes" icon="doc" span={2}>
+      {
+        recientes.length === 0 ? (
+          <p class="vacio">Aún no hay sesiones registradas.</p>
+        ) : (
+          <ul class="lista">
+            {recientes.map((sesion) => (
+              <li>
+                <div class="lista-item plano">
+                  <span class="lista-ico">
+                    <LifeIcon name="estudio" size={15} />
+                  </span>
+                  <span class="lista-texto">
+                    <strong>{sesion.curso}</strong> · {sesion.detalle ?? `${sesion.minutos} min`}
+                  </span>
+                  <span class="lista-fecha">{relativeDayLabel(sesion.fecha)}</span>
+                  <form method="POST" action={actions.estudio.borrarSesion}>
+                    <input type="hidden" name="id" value={sesion.id} />
+                    <button class="icon-btn" type="submit" aria-label="Eliminar sesión">
+                      <LifeIcon name="cerrar" size={14} />
+                    </button>
+                  </form>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+      <p class="vacio peq">Apunta una sesión desde «+ Registrar → Estudio».</p>
+    </Card>
+  </div>
+</AppShell>
+
+<style>
+  .lista-item.plano {
+    text-decoration: none;
+  }
+  .curso-progreso {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+  }
+  .curso-progreso .qa-field {
+    flex: 0 0 auto;
+  }
+  .curso-progreso input {
+    width: 76px;
+  }
+  .curso-nuevo {
+    margin-top: 4px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .objetivo-form {
+    align-items: flex-end;
+  }
+  .objetivo-form .qa-field {
+    flex: 0 0 auto;
+  }
+  .objetivo-form input {
+    width: 90px;
+  }
+</style>

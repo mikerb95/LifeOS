@@ -1,0 +1,36 @@
+---
+interface Props {
+  data: number[];
+  w?: number;
+  h?: number;
+  area?: boolean;
+  refLine?: number;
+}
+
+const { data, w = 220, h = 56, area = true, refLine } = Astro.props;
+
+const series = data.length === 0 ? [0, 0] : data.length === 1 ? [data[0], data[0]] : data;
+
+function pathFrom(points: [number, number][]): string {
+  return points.map((pt, i) => (i === 0 ? 'M' : 'L') + pt[0].toFixed(1) + ' ' + pt[1].toFixed(1)).join(' ');
+}
+
+const min = Math.min(...series);
+const max = Math.max(...series);
+const pad = (max - min) * 0.18 || 1;
+const lo = min - pad;
+const hi = max + pad;
+const x = (i: number) => 2 + (i / (series.length - 1)) * (w - 4);
+const y = (v: number) => h - 3 - ((v - lo) / (hi - lo)) * (h - 8);
+const pts: [number, number][] = series.map((v, i) => [x(i), y(v)]);
+const line = pathFrom(pts);
+const showRef = refLine !== undefined && refLine >= lo && refLine <= hi;
+const last = pts[pts.length - 1];
+---
+
+<svg class="spark" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+  {area && <path d={`${line} L${(w - 2).toFixed(1)} ${(h - 1).toFixed(1)} L2 ${(h - 1).toFixed(1)} Z`} class="spark-area" />}
+  {showRef && <line x1="2" x2={w - 2} y1={y(refLine!)} y2={y(refLine!)} class="spark-ref" />}
+  <path d={line} class="spark-line" />
+  <circle cx={last[0]} cy={last[1]} r="2.6" class="spark-dot" />
+</svg>

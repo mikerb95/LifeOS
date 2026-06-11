@@ -1,0 +1,15 @@
+---
+interface Props {
+  value: number;
+  unit?: string;
+  goodWhen?: 'up' | 'down';
+  label: string;
+}
+
+const { value, unit = '', goodWhen = 'down', label } = Astro.props;
+const good = value === 0 ? null : (value < 0) === (goodWhen === 'down');
+const cls = good === null ? 'neutral' : good ? 'good' : 'bad';
+const arrow = value === 0 ? '·' : value < 0 ? '↓' : '↑';
+---
+
+<span class={`delta ${cls}`}>{arrow} {Math.abs(value)}{unit} <em>{label}</em></span>

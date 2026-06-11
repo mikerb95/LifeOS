@@ -1,0 +1,39 @@
+---
+import LifeIcon from './LifeIcon.astro';
+
+interface Props {
+  title?: string;
+  meta?: string;
+  metaHref?: string;
+  icon?: string;
+  span?: 2;
+}
+
+const { title, meta, metaHref, icon, span } = Astro.props;
+---
+
+<section class={'card' + (span ? ' span-' + span : '')}>
+  {
+    (title || meta) && (
+      <header class="card-head">
+        <h3 class="card-title">
+          {icon && (
+            <span class="card-ico">
+              <LifeIcon name={icon} size={15} />
+            </span>
+          )}
+          {title}
+        </h3>
+        {meta &&
+          (metaHref ? (
+            <a class="card-meta" href={metaHref}>
+              {meta}
+            </a>
+          ) : (
+            <span class="card-meta">{meta}</span>
+          ))}
+      </header>
+    )
+  }
+  <slot />
+</section>

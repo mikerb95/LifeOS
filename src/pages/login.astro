@@ -1,0 +1,62 @@
+---
+import { actions } from 'astro:actions';
+import BaseHead from '../layouts/BaseHead.astro';
+
+const result = Astro.getActionResult(actions.auth.login);
+if (result && !result.error) {
+  return Astro.redirect('/');
+}
+const error = result?.error;
+---
+
+<html lang="es">
+  <head>
+    <BaseHead title="LifeOS" description="Acceso privado a tu centro de mando personal." />
+  </head>
+  <body class="login-body">
+    <main class="login-card">
+      <h1 class="login-title">LifeOS</h1>
+      <p class="login-sub">Centro de mando personal. Acceso privado.</p>
+      <form method="POST" action={actions.auth.login} class="qa-form">
+        <label class="qa-field">
+          <span>Contraseña</span>
+          <input type="password" name="password" required autofocus autocomplete="current-password" />
+        </label>
+        {error && <p class="form-error">{error.message}</p>}
+        <button class="qa-save" type="submit">Entrar</button>
+      </form>
+    </main>
+  </body>
+</html>
+
+<style>
+  .login-body {
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+  .login-card {
+    width: 100%;
+    max-width: 360px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 28px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .login-title {
+    font-family: var(--serif);
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .login-sub {
+    font-size: 13.5px;
+    color: var(--ink-2);
+    margin-top: -10px;
+  }
+</style>

@@ -1,0 +1,32 @@
+---
+import '@fontsource-variable/newsreader';
+import '@fontsource/spline-sans/400.css';
+import '@fontsource/spline-sans/500.css';
+import '@fontsource/spline-sans/600.css';
+import '@fontsource/spline-sans-mono/400.css';
+import '@fontsource/spline-sans-mono/500.css';
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+const pageTitle = title === 'LifeOS' ? 'LifeOS — Centro de mando personal' : `${title} · LifeOS`;
+---
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="generator" content={Astro.generator} />
+<title>{pageTitle}</title>
+<meta name="description" content={description} />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="theme-color" content="#F6F3EE" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="manifest" href="/manifest.webmanifest" />
+
+<meta property="og:title" content={pageTitle} />
+<meta property="og:description" content={description} />
+<meta property="og:type" content="website" />
+<meta property="og:locale" content="es_ES" />

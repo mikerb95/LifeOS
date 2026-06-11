@@ -1,0 +1,348 @@
+---
+import { desc, eq } from 'drizzle-orm';
+import AppShell from '../layouts/AppShell.astro';
+import Card from '../components/ui/Card.astro';
+import LifeIcon from '../components/ui/LifeIcon.astro';
+import BigStat from '../components/ui/BigStat.astro';
+import Delta from '../components/ui/Delta.astro';
+import Sparkline from '../components/ui/Sparkline.astro';
+import HeatStrip from '../components/ui/HeatStrip.astro';
+import Ring from '../components/ui/Ring.astro';
+import Badge from '../components/ui/Badge.astro';
+import { actions } from 'astro:actions';
+import { db } from '../db/client';
+import { pesoLogs, suenoLogs, fcReposoLogs, entrenos, comidas, biomarcadores } from '../db/schema';
+import { addDays, todayISO, relativeDayLabel, heatmapSeries } from '../lib/dates';
+import { fmtNum } from '../lib/format';
+import { getSetting, SETTINGS_KEYS } from '../lib/settings';
+
+const fecha = todayISO();
+
+// ---------- Peso corporal ----------
+
+const pesoRecientes = await db.select().from(pesoLogs).orderBy(desc(pesoLogs.fecha)).limit(30);
+const pesoAsc = [...pesoRecientes].reverse();
+const pesoActual = pesoRecientes[0]?.valorKg ?? null;
+
+const pesoObjetivo = await getSetting(SETTINGS_KEYS.pesoObjetivo, pesoActual ?? 0);
+
+const haceSieteDias = addDays(fecha, -7);
+const pesoHaceSieteDias = pesoAsc.filter((p) => p.fecha <= haceSieteDias).at(-1) ?? null;
+const pesoDelta = pesoActual !== null && pesoHaceSieteDias ? pesoActual - pesoHaceSieteDias.valorKg : 0;
+
+// ---------- Constancia de entreno ----------
+
+const todosEntrenos = await db
+  .select({ id: entrenos.id, fecha: entrenos.fecha, tipo: entrenos.tipo, detalle: entrenos.detalle })
+  .from(entrenos);
+const entrenoMap = new Map<string, number>();
+for (const e of todosEntrenos) entrenoMap.set(e.fecha, (entrenoMap.get(e.fecha) ?? 0) + 1);
+const entrenoHeat = heatmapSeries(entrenoMap, [0, 2, 3]);
+
+const haceSeisDias = addDays(fecha, -6);
+const entrenosSemana = todosEntrenos.filter((e) => e.fecha >= haceSeisDias).length;
+const entrenosObjetivoSemana = await getSetting(SETTINGS_KEYS.entrenosObjetivoSemana, 3);
+
+const entrenosRecientes = [...todosEntrenos]
+  .sort((a, b) => (a.fecha === b.fecha ? b.id - a.id : a.fecha < b.fecha ? 1 : -1))
+  .slice(0, 6);
+
+// ---------- Hoy en nutrición ----------
+
+const kcalObjetivo = await getSetting(SETTINGS_KEYS.kcalObjetivo, 2000);
+const proteinaObjetivo = await getSetting(SETTINGS_KEYS.proteinaObjetivo, 100);
+
+const comidasHoy = await db.select().from(comidas).where(eq(comidas.fecha, fecha));
+const kcalActual = comidasHoy.reduce((s, c) => s + (c.kcal ?? 0), 0);
+const proteinaActual = comidasHoy.reduce((s, c) => s + (c.proteinaG ?? 0), 0);
+
+// ---------- Sueño y recuperación ----------
+
+const suenoObjetivo = await getSetting(SETTINGS_KEYS.suenoObjetivo, 8);
+const suenoRecientes = await db.select().from(suenoLogs).orderBy(desc(suenoLogs.fecha)).limit(14);
+const suenoAsc = [...suenoRecientes].reverse();
+const suenoActual = suenoRecientes[0]?.horas ?? null;
+
+const [fcReciente] = await db.select().from(fcReposoLogs).orderBy(desc(fcReposoLogs.fecha)).limit(1);
+
+// ---------- Biomarcadores ----------
+
+const biomarcadoresAll = await db.select().from(biomarcadores).orderBy(desc(biomarcadores.fecha));
+
+const ESTADO_LABEL: Record<string, string> = {
+  ok: 'En rango',
+  medio: 'Vigilar',
+  alto: 'Fuera de rango',
+};
+
+// ---------- Objetivos ----------
+
+const objetivosResult = Astro.getActionResult(actions.bienestar.guardarObjetivos);
+const biomarcadorResult = Astro.getActionResult(actions.bienestar.crearBiomarcador);
+const comidaResult = Astro.getActionResult(actions.bienestar.crearComida);
+
+const pesoObjetivoActual = await getSetting(SETTINGS_KEYS.pesoObjetivo, pesoActual ?? 70);
+const suenoObjetivoActual = await getSetting(SETTINGS_KEYS.suenoObjetivo, 8);
+const entrenosObjetivoActual = await getSetting(SETTINGS_KEYS.entrenosObjetivoSemana, 3);
+const kcalObjetivoActual = await getSetting(SETTINGS_KEYS.kcalObjetivo, 2000);
+const proteinaObjetivoActual = await getSetting(SETTINGS_KEYS.proteinaObjetivo, 100);
+---
+
+<AppShell activeId="bienestar">
+  <div class="grid">
+    <Card title="Peso corporal" icon="peso" span={2}>
+      {
+        pesoRecientes.length === 0 ? (
+          <p class="vacio">
+            Aún no has registrado tu peso. Usa <strong>+ Registrar → Peso</strong>.
+          </p>
+        ) : (
+          <>
+            <div class="row-stats">
+              <BigStat label="Actual" value={pesoActual !== null ? fmtNum(pesoActual) : '—'} unit="kg">
+                <Delta value={pesoDelta} unit=" kg" goodWhen="down" label="vs. hace 7 días" />
+              </BigStat>
+              <BigStat label="Objetivo" value={fmtNum(pesoObjetivo)} unit="kg">
+                {pesoActual !== null && pesoActual > pesoObjetivo ? (
+                  <span class="delta neutral">faltan {fmtNum(pesoActual - pesoObjetivo)} kg</span>
+                ) : pesoActual !== null ? (
+                  <span class="delta neutral">objetivo alcanzado</span>
+                ) : null}
+              </BigStat>
+            </div>
+            <Sparkline data={pesoAsc.map((p) => p.valorKg)} w={560} h={88} refLine={pesoObjetivo} />
+            <p class="chart-note">Últimos 30 días</p>
+          </>
+        )
+      }
+    </Card>
+
+    <Card title="Constancia de entreno" icon="fuerza">
+      {
+        todosEntrenos.length === 0 ? (
+          <p class="vacio">
+            Aún no hay entrenos registrados. Usa <strong>+ Registrar → Entreno</strong>.
+          </p>
+        ) : (
+          <>
+            <HeatStrip data={entrenoHeat} label="Entrenos de los últimos 4 meses" />
+            <p class="chart-note">
+              Últimas 18 semanas · {entrenosSemana} de {entrenosObjetivoSemana} esta semana
+            </p>
+            <ul class="lista compacta">
+              {entrenosRecientes.map((en) => (
+                <li>
+                  <div class="lista-item plano">
+                    <span class="lista-ico">
+                      <LifeIcon name="fuerza" size={15} />
+                    </span>
+                    <span class="lista-texto">
+                      <strong>{en.tipo}</strong>
+                      {en.detalle ? ` · ${en.detalle}` : ''}
+                    </span>
+                    <span class="lista-fecha">{relativeDayLabel(en.fecha)}</span>
+                    <form method="POST" action={actions.bienestar.borrarEntreno}>
+                      <input type="hidden" name="id" value={en.id} />
+                      <button class="icon-btn" type="submit" aria-label="Eliminar entreno">
+                        <LifeIcon name="cerrar" size={14} />
+                      </button>
+                    </form>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )
+      }
+    </Card>
+
+    <Card title="Hoy en nutrición" icon="comida">
+      <div class="anillos-duo">
+        <Ring value={kcalObjetivo > 0 ? kcalActual / kcalObjetivo : 0} size={76} stroke={7}>
+          <strong>{kcalActual}</strong>
+          <span class="ring-de">/{kcalObjetivo} kcal</span>
+        </Ring>
+        <Ring value={proteinaObjetivo > 0 ? proteinaActual / proteinaObjetivo : 0} size={76} stroke={7}>
+          <strong>{Math.round(proteinaActual)}</strong>
+          <span class="ring-de">/{proteinaObjetivo} g</span>
+        </Ring>
+      </div>
+
+      {
+        comidasHoy.length === 0 ? (
+          <p class="vacio peq">
+            Nada registrado hoy. Usa <strong>+ Registrar → Comida</strong>.
+          </p>
+        ) : (
+          <ul class="lista compacta">
+            {comidasHoy.map((c) => (
+              <li>
+                <div class="lista-item plano">
+                  <span class="lista-texto">
+                    <strong>{c.nombre}</strong>
+                    {c.detalle ? ` · ${c.detalle}` : ''}
+                  </span>
+                  <span class="lista-fecha">{c.kcal ?? '—'} kcal</span>
+                  <form method="POST" action={actions.bienestar.borrarComida}>
+                    <input type="hidden" name="id" value={c.id} />
+                    <button class="icon-btn" type="submit" aria-label="Eliminar comida">
+                      <LifeIcon name="cerrar" size={14} />
+                    </button>
+                  </form>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+
+      <form class="qa-form" method="POST" action={actions.bienestar.crearComida}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Nombre</span>
+            <input type="text" name="nombre" required />
+          </label>
+          <label class="qa-field">
+            <span>Detalle</span>
+            <input type="text" name="detalle" />
+          </label>
+          <label class="qa-field">
+            <span>Calorías (kcal)</span>
+            <input type="text" inputmode="numeric" name="kcal" />
+          </label>
+          <label class="qa-field">
+            <span>Proteína (g)</span>
+            <input type="text" inputmode="decimal" name="proteinaG" />
+          </label>
+        </div>
+        {comidaResult?.error && <p class="form-error">{comidaResult.error.message}</p>}
+        <button class="qa-save" type="submit">Añadir comida</button>
+      </form>
+    </Card>
+
+    <Card title="Sueño y recuperación" icon="sueno">
+      {
+        suenoRecientes.length === 0 ? (
+          <p class="vacio">
+            Sin registros de sueño todavía. Usa <strong>+ Registrar → Sueño</strong>.
+          </p>
+        ) : (
+          <>
+            <div class="row-stats">
+              <BigStat label="Anoche" value={suenoActual !== null ? fmtNum(suenoActual) : '—'} unit="h">
+                <span class="delta neutral">objetivo {suenoObjetivo} h</span>
+              </BigStat>
+            </div>
+            <Sparkline data={suenoAsc.map((s) => s.horas)} w={260} h={52} refLine={suenoObjetivo} />
+            <p class="chart-note">Últimas 14 noches</p>
+          </>
+        )
+      }
+      <div class="kv-rows">
+        <div class="kv">
+          <span>FC en reposo</span>
+          <strong>{fcReciente ? `${fcReciente.valorPpm} ppm` : '—'}</strong>
+        </div>
+      </div>
+    </Card>
+
+    <Card title="Biomarcadores" icon="corazon" span={2}>
+      {
+        biomarcadoresAll.length === 0 ? (
+          <p class="vacio">Aún no has añadido biomarcadores.</p>
+        ) : (
+          <div class="bio-grid">
+            {biomarcadoresAll.map((b) => (
+              <div class="bio-item">
+                <span class="bio-nombre">{b.nombre}</span>
+                <span class="bio-valor">
+                  {b.valor}
+                  <small> {b.unidad}</small>
+                </span>
+                <Badge estado={b.estado === 'ok' ? 'ok' : 'pronto'}>{ESTADO_LABEL[b.estado]}</Badge>
+                <form method="POST" action={actions.bienestar.borrarBiomarcador}>
+                  <input type="hidden" name="id" value={b.id} />
+                  <button class="icon-btn" type="submit" aria-label="Eliminar biomarcador">
+                    <LifeIcon name="cerrar" size={14} />
+                  </button>
+                </form>
+              </div>
+            ))}
+          </div>
+        )
+      }
+
+      <form class="qa-form" method="POST" action={actions.bienestar.crearBiomarcador}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Nombre</span>
+            <input type="text" name="nombre" required />
+          </label>
+          <label class="qa-field">
+            <span>Valor</span>
+            <input type="text" name="valor" required />
+          </label>
+          <label class="qa-field">
+            <span>Unidad</span>
+            <input type="text" name="unidad" required />
+          </label>
+          <label class="qa-field">
+            <span>Fecha</span>
+            <input type="date" name="fecha" value={fecha} required />
+          </label>
+          <label class="qa-field">
+            <span>Estado</span>
+            <select name="estado" required>
+              <option value="ok">En rango</option>
+              <option value="medio">Vigilar</option>
+              <option value="alto">Fuera de rango</option>
+            </select>
+          </label>
+        </div>
+        {biomarcadorResult?.error && <p class="form-error">{biomarcadorResult.error.message}</p>}
+        <button class="qa-save" type="submit">Añadir biomarcador</button>
+      </form>
+    </Card>
+
+    <Card title="Tus objetivos" icon="check" span={2}>
+      <form class="qa-form" method="POST" action={actions.bienestar.guardarObjetivos}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Objetivo de peso (kg)</span>
+            <input type="number" step="0.1" name="pesoObjetivo" value={pesoObjetivoActual} required />
+          </label>
+          <label class="qa-field">
+            <span>Objetivo de sueño (h)</span>
+            <input type="number" step="0.1" name="suenoObjetivo" value={suenoObjetivoActual} required />
+          </label>
+          <label class="qa-field">
+            <span>Entrenos por semana</span>
+            <input type="number" step="1" name="entrenosObjetivoSemana" value={entrenosObjetivoActual} required />
+          </label>
+          <label class="qa-field">
+            <span>Objetivo de calorías (kcal)</span>
+            <input type="number" step="1" name="kcalObjetivo" value={kcalObjetivoActual} required />
+          </label>
+          <label class="qa-field">
+            <span>Objetivo de proteína (g)</span>
+            <input type="number" step="1" name="proteinaObjetivo" value={proteinaObjetivoActual} required />
+          </label>
+        </div>
+        {objetivosResult?.error && <p class="form-error">{objetivosResult.error.message}</p>}
+        {objetivosResult?.data?.success && <p class="form-success">Objetivos guardados.</p>}
+        <button class="qa-save" type="submit">Guardar objetivos</button>
+      </form>
+    </Card>
+  </div>
+</AppShell>
+
+<style>
+  .lista-item.plano {
+    cursor: default;
+  }
+  .lista-item.plano:hover {
+    background: none;
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+</style>

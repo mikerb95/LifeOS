@@ -1,0 +1,164 @@
+---
+import { actions } from 'astro:actions';
+import BaseHead from './BaseHead.astro';
+import LifeIcon from '../components/ui/LifeIcon.astro';
+import QuickAdd from '../components/QuickAdd';
+import { VISTAS } from '../lib/nav';
+import { formatHeaderDate, formatLongDate, todayISO } from '../lib/dates';
+
+interface Props {
+  activeId: string;
+}
+
+const { activeId } = Astro.props;
+const vista = VISTAS.find((v) => v.id === activeId) ?? VISTAS[0];
+const titulo = activeId === 'hoy' ? formatLongDate(todayISO()) : vista.titulo;
+const fechaLarga = formatHeaderDate(todayISO(), true);
+const fechaCorta = formatHeaderDate(todayISO(), false);
+
+const TAB_PRINCIPAL = VISTAS.slice(0, 2); // Hoy, Diario
+const TAB_SOLO = VISTAS[2]; // Bienestar
+const MAS = VISTAS.slice(3); // Estudio…Integraciones
+const masActivo = MAS.some((v) => v.id === activeId);
+---
+
+<html lang="es">
+  <head>
+    <BaseHead title={vista.id === 'hoy' ? 'LifeOS' : vista.nombre} description={vista.sub} />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="marca">
+          <span class="marca-nombre">LifeOS</span>
+          <span class="marca-fecha">{fechaLarga}</span>
+        </div>
+        <button class="btn-registrar" type="button" data-open-quickadd>
+          <LifeIcon name="mas" size={16} /> Registrar
+        </button>
+        <nav class="nav" aria-label="Módulos">
+          {
+            VISTAS.map((v) => (
+              <a href={v.href} class={'nav-item' + (v.id === activeId ? ' on' : '')} aria-current={v.id === activeId ? 'page' : undefined}>
+                <span class="nav-ico">
+                  <LifeIcon name={v.icono} size={17} />
+                </span>
+                {v.nombre}
+              </a>
+            ))
+          }
+        </nav>
+        <div class="sidebar-pie">
+          <p class="privacidad">
+            <strong>0 fuentes conectadas.</strong><br />
+            Tus datos son privados: solo tú puedes acceder con tu contraseña.
+          </p>
+          <form method="POST" action={actions.auth.logout}>
+            <button class="nav-item" type="submit">
+              <span class="nav-ico">
+                <LifeIcon name="salir" size={17} />
+              </span>
+              Cerrar sesión
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      <div>
+        <header class="mhead">
+          <div class="mhead-marca">
+            <span class="marca-nombre">LifeOS</span>
+            <span class="marca-fecha">{fechaCorta}</span>
+          </div>
+          <form method="POST" action={actions.auth.logout}>
+            <button class="icon-btn" type="submit" aria-label="Cerrar sesión">
+              <LifeIcon name="salir" size={18} />
+            </button>
+          </form>
+        </header>
+        <main class="main">
+          <div class="main-head">
+            <div>
+              <h1 class="main-titulo">{titulo}</h1>
+              <p class="main-sub">{vista.sub}</p>
+            </div>
+          </div>
+          <slot />
+        </main>
+      </div>
+
+      <nav class="tabbar" aria-label="Módulos">
+        {
+          TAB_PRINCIPAL.map((v) => (
+            <a href={v.href} class={'tab-item' + (v.id === activeId ? ' on' : '')} aria-current={v.id === activeId ? 'page' : undefined}>
+              <LifeIcon name={v.icono} size={19} />
+              {v.nombre}
+            </a>
+          ))
+        }
+        <button class="tab-fab" type="button" data-open-quickadd aria-label="Registrar">
+          <LifeIcon name="mas" size={22} stroke={2} />
+        </button>
+        <a href={TAB_SOLO.href} class={'tab-item' + (activeId === TAB_SOLO.id ? ' on' : '')} aria-current={activeId === TAB_SOLO.id ? 'page' : undefined}>
+          <LifeIcon name={TAB_SOLO.icono} size={19} />
+          {TAB_SOLO.nombre}
+        </a>
+        <button type="button" class={'tab-item' + (masActivo ? ' on' : '')} data-open-dialog="mas-sheet">
+          <LifeIcon name="puntos" size={19} />Más
+        </button>
+      </nav>
+
+      <dialog id="mas-sheet" class="sheet-dialog" aria-label="Más módulos">
+        <div class="qa-sheet">
+          <header class="qa-head">
+            <h2>Más módulos</h2>
+            <button class="qa-close" type="button" data-close-dialog aria-label="Cerrar">
+              <LifeIcon name="cerrar" size={16} />
+            </button>
+          </header>
+          <div class="mas-list">
+            {
+              MAS.map((v) => (
+                <a href={v.href} class={'nav-item' + (v.id === activeId ? ' on' : '')} aria-current={v.id === activeId ? 'page' : undefined}>
+                  <span class="nav-ico">
+                    <LifeIcon name={v.icono} size={17} />
+                  </span>
+                  {v.nombre}
+                </a>
+              ))
+            }
+          </div>
+        </div>
+      </dialog>
+
+      <QuickAdd client:load />
+    </div>
+
+    <script>
+      function bind() {
+        document.querySelectorAll<HTMLButtonElement>('[data-open-dialog]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-open-dialog');
+            const dialog = id ? document.getElementById(id) : null;
+            if (dialog instanceof HTMLDialogElement) dialog.showModal();
+          });
+        });
+        document.querySelectorAll<HTMLButtonElement>('[data-close-dialog]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const dialog = btn.closest('dialog');
+            dialog?.close();
+          });
+        });
+        document.querySelectorAll<HTMLDialogElement>('dialog.sheet-dialog').forEach((dialog) => {
+          dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) dialog.close();
+          });
+        });
+        document.querySelectorAll<HTMLButtonElement>('[data-open-quickadd]').forEach((btn) => {
+          btn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('quickadd:open')));
+        });
+      }
+      bind();
+    </script>
+  </body>
+</html>

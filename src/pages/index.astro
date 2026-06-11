@@ -1,0 +1,337 @@
+---
+import { desc, eq } from 'drizzle-orm';
+import AppShell from '../layouts/AppShell.astro';
+import Card from '../components/ui/Card.astro';
+import BigStat from '../components/ui/BigStat.astro';
+import Delta from '../components/ui/Delta.astro';
+import Sparkline from '../components/ui/Sparkline.astro';
+import Ring from '../components/ui/Ring.astro';
+import Meter from '../components/ui/Meter.astro';
+import LifeIcon from '../components/ui/LifeIcon.astro';
+import { db } from '../db/client';
+import {
+  pesoLogs,
+  fcReposoLogs,
+  suenoLogs,
+  entrenos,
+  patrimonioLogs,
+  deudas,
+  movimientos,
+  fechasImportantes,
+  mascotaTareas,
+  vehiculoTareas,
+  documentos,
+  impuestos,
+  libros,
+  lecturaSesiones,
+  diarioEntradas,
+  registroLog,
+} from '../db/schema';
+import { addDays, currentStreak, diffDays, formatCountdown, nextAnnualOccurrence, todayISO } from '../lib/dates';
+import { fmtEur, fmtNum, clamp01 } from '../lib/format';
+import { getSetting, SETTINGS_KEYS } from '../lib/settings';
+import { ANIMO_LABELS } from '../lib/diario';
+
+const fecha = todayISO();
+
+// ---------- Bienestar ----------
+
+const pesoRecientes = await db.select().from(pesoLogs).orderBy(desc(pesoLogs.fecha)).limit(30);
+const pesoAsc = [...pesoRecientes].reverse();
+const pesoActual = pesoRecientes[0]?.valorKg ?? null;
+const pesoObjetivo = await getSetting(SETTINGS_KEYS.pesoObjetivo, pesoActual ?? 0);
+
+const haceSieteDias = addDays(fecha, -7);
+const pesoHaceSieteDias = pesoAsc.filter((p) => p.fecha <= haceSieteDias).at(-1) ?? null;
+const pesoDelta = pesoActual !== null && pesoHaceSieteDias ? pesoActual - pesoHaceSieteDias.valorKg : 0;
+
+const [fcReciente] = await db.select().from(fcReposoLogs).orderBy(desc(fcReposoLogs.fecha)).limit(1);
+const [suenoReciente] = await db.select().from(suenoLogs).orderBy(desc(suenoLogs.fecha)).limit(1);
+const suenoObjetivo = await getSetting(SETTINGS_KEYS.suenoObjetivo, 8);
+
+const todosEntrenos = await db.select({ fecha: entrenos.fecha }).from(entrenos);
+const haceSeisDias = addDays(fecha, -6);
+const entrenosSemana = todosEntrenos.filter((e) => e.fecha >= haceSeisDias).length;
+const entrenosObjetivoSemana = await getSetting(SETTINGS_KEYS.entrenosObjetivoSemana, 3);
+
+// ---------- Finanzas ----------
+
+const patrimonioDesc = await db.select().from(patrimonioLogs).orderBy(desc(patrimonioLogs.fecha)).limit(12);
+const patrimonioAsc = [...patrimonioDesc].reverse();
+const patrimonioActual = patrimonioAsc.at(-1)?.valor ?? null;
+
+const referenciaIdx = Math.max(0, patrimonioAsc.length - 1 - 3);
+const referencia = patrimonioAsc.length >= 2 ? patrimonioAsc[referenciaIdx]?.valor ?? null : null;
+const patrimonioDelta = patrimonioActual !== null && referencia !== null ? patrimonioActual - referencia : 0;
+
+const todasDeudas = await db.select().from(deudas);
+const deudaTotal = todasDeudas.reduce((s, d) => s + d.montoActual, 0);
+
+const todosMovimientos = await db.select().from(movimientos);
+const mesActual = fecha.slice(0, 7);
+const movimientosMes = todosMovimientos.filter((m) => m.fecha.slice(0, 7) === mesActual);
+const balanceMes = movimientosMes.reduce((s, m) => s + m.importe, 0);
+
+const nombreMesActual = new Intl.DateTimeFormat('es-ES', { month: 'long', timeZone: 'UTC' }).format(
+  new Date(`${mesActual}-01T00:00:00Z`),
+);
+
+// ---------- Pendiente pronto ----------
+
+interface Pendiente {
+  texto: string;
+  dias: number;
+  icono: string;
+  href: string;
+}
+
+const pendientes: Pendiente[] = [];
+
+const todasFechas = await db.select().from(fechasImportantes);
+for (const f of todasFechas) {
+  const targetIso = f.tipo === 'evento' ? f.fecha : nextAnnualOccurrence(f.fecha);
+  pendientes.push({ texto: f.nombre, dias: diffDays(targetIso), icono: 'personas', href: '/personas' });
+}
+
+const todasMascotaTareas = await db.select().from(mascotaTareas);
+for (const t of todasMascotaTareas) {
+  pendientes.push({ texto: t.nombre, dias: diffDays(t.fechaVenc), icono: 'pata', href: '/responsabilidades' });
+}
+
+const todasVehiculoTareas = await db.select().from(vehiculoTareas);
+for (const t of todasVehiculoTareas) {
+  pendientes.push({ texto: t.nombre, dias: diffDays(t.fechaVenc), icono: 'coche', href: '/responsabilidades' });
+}
+
+const todosDocumentos = await db.select().from(documentos);
+for (const d of todosDocumentos) {
+  if (d.fechaVenc) {
+    pendientes.push({ texto: d.nombre, dias: diffDays(d.fechaVenc), icono: 'doc', href: '/responsabilidades' });
+  }
+}
+
+const todosImpuestos = await db.select().from(impuestos).where(eq(impuestos.pagado, false));
+for (const i of todosImpuestos) {
+  pendientes.push({ texto: i.nombre, dias: diffDays(i.fecha), icono: 'gasto', href: '/finanzas' });
+}
+
+const pendientesPronto = pendientes
+  .filter((p) => p.dias <= 60)
+  .sort((a, b) => a.dias - b.dias)
+  .slice(0, 5);
+
+// ---------- Crecimiento ----------
+
+const [libroActual] = await db.select().from(libros).where(eq(libros.estado, 'leyendo')).limit(1);
+
+const sesiones = await db.select({ fecha: lecturaSesiones.fecha }).from(lecturaSesiones);
+const racha = currentStreak(new Set(sesiones.map((s) => s.fecha)));
+
+const librosObjetivoAnio = await getSetting(SETTINGS_KEYS.librosObjetivoAnio, 12);
+const librosLeidos = await db
+  .select({ fechaTerminado: libros.fechaTerminado })
+  .from(libros)
+  .where(eq(libros.estado, 'leido'));
+const anioActual = fecha.slice(0, 4);
+const leidosEsteAnio = librosLeidos.filter((l) => l.fechaTerminado?.startsWith(anioActual)).length;
+
+// ---------- Diario ----------
+
+const [hoyDiario] = await db.select().from(diarioEntradas).where(eq(diarioEntradas.fecha, fecha));
+
+// ---------- Registrado hoy ----------
+
+const registrosHoy = await db
+  .select()
+  .from(registroLog)
+  .where(eq(registroLog.fecha, fecha))
+  .orderBy(desc(registroLog.hora), desc(registroLog.id));
+---
+
+<AppShell activeId="hoy">
+  <div class="grid">
+    <Card title="Bienestar" icon="bienestar" span={2} metaHref="/bienestar" meta="Ver módulo →">
+      <div class="row-stats">
+        <BigStat label="Peso" value={pesoActual !== null ? fmtNum(pesoActual) : '—'} unit="kg">
+          {pesoActual !== null && <Delta value={pesoDelta} unit=" kg" goodWhen="down" label="esta semana" />}
+        </BigStat>
+        <BigStat label="FC reposo" value={fcReciente ? String(fcReciente.valorPpm) : '—'} unit="ppm" />
+        <BigStat label="Sueño" value={suenoReciente ? fmtNum(suenoReciente.horas) : '—'} unit="h">
+          <span class="delta neutral">objetivo {suenoObjetivo} h</span>
+        </BigStat>
+        <div class="bigstat">
+          <span class="bigstat-label">Entrenos · semana</span>
+          <Ring value={entrenosObjetivoSemana > 0 ? clamp01(entrenosSemana / entrenosObjetivoSemana) : 0} size={56} stroke={6}>
+            <strong>{entrenosSemana}</strong>
+            <span class="ring-de">/{entrenosObjetivoSemana}</span>
+          </Ring>
+        </div>
+      </div>
+      {
+        pesoAsc.length > 0 ? (
+          <>
+            <Sparkline data={pesoAsc.map((p) => p.valorKg)} w={560} h={64} refLine={pesoObjetivo} />
+            <p class="chart-note">Peso · últimos 30 días</p>
+          </>
+        ) : (
+          <p class="vacio peq">
+            Aún no has registrado tu peso. Usa <strong>+ Registrar → Peso</strong>.
+          </p>
+        )
+      }
+    </Card>
+
+    <Card title="Finanzas" icon="finanzas" metaHref="/finanzas" meta="Ver módulo →">
+      {
+        patrimonioActual === null ? (
+          <p class="vacio">Aún no has registrado tu patrimonio.</p>
+        ) : (
+          <>
+            <BigStat label="Patrimonio neto" value={fmtNum(patrimonioActual)} unit="€">
+              <Delta value={patrimonioDelta} unit="€" goodWhen="up" label="últimos meses" />
+            </BigStat>
+            <div class="kv-rows">
+              <div class="kv">
+                <span>Balance de {nombreMesActual}</span>
+                <strong class={balanceMes >= 0 ? 'pos' : ''}>
+                  {balanceMes >= 0 ? '+' : '−'}
+                  {fmtEur(Math.abs(balanceMes))}
+                </strong>
+              </div>
+              <div class="kv">
+                <span>Deuda pendiente</span>
+                <strong>{fmtEur(deudaTotal)}</strong>
+              </div>
+            </div>
+            <Sparkline data={patrimonioAsc.map((p) => p.valor)} w={260} h={48} />
+            <p class="chart-note">Patrimonio · 12 meses</p>
+          </>
+        )
+      }
+    </Card>
+
+    <Card title="Pendiente pronto" icon="campana">
+      {
+        pendientesPronto.length === 0 ? (
+          <p class="vacio">Nada urgente por ahora.</p>
+        ) : (
+          <ul class="lista">
+            {pendientesPronto.map((p) => (
+              <li>
+                <a class="lista-item" href={p.href}>
+                  <span class="lista-ico">
+                    <LifeIcon name={p.icono} size={15} />
+                  </span>
+                  <span class="lista-texto">{p.texto}</span>
+                  <span class="lista-fecha">{formatCountdown(p.dias)}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </Card>
+
+    <Card title="Crecimiento" icon="crecimiento" metaHref="/crecimiento" meta="Ver módulo →">
+      {
+        libroActual ? (
+          <>
+            <div class="libro-mini">
+              <div class="libro-tapa" aria-hidden="true">
+                <LifeIcon name="libro" size={20} />
+              </div>
+              <div>
+                <strong class="libro-titulo">{libroActual.titulo}</strong>
+                {libroActual.autor && <span class="libro-autor">{libroActual.autor}</span>}
+              </div>
+            </div>
+            <Meter
+              value={libroActual.totalPaginas ? clamp01(libroActual.paginaActual / libroActual.totalPaginas) : 0}
+              label={`Página ${libroActual.paginaActual}${libroActual.totalPaginas ? ' de ' + libroActual.totalPaginas : ''}`}
+              sub={libroActual.totalPaginas ? `${Math.round((libroActual.paginaActual / libroActual.totalPaginas) * 100)} %` : undefined}
+            />
+          </>
+        ) : (
+          <p class="vacio peq">No estás leyendo ningún libro ahora.</p>
+        )
+      }
+      <div class="kv-rows">
+        <div class="kv">
+          <span>Racha de lectura</span>
+          <strong>{racha} días</strong>
+        </div>
+        <div class="kv">
+          <span>Libros este año</span>
+          <strong>
+            {leidosEsteAnio} / {librosObjetivoAnio}
+          </strong>
+        </div>
+      </div>
+    </Card>
+
+    <Card title="Diario" icon="nota" metaHref="/diario" meta="Ver módulo →">
+      {
+        hoyDiario ? (
+          <>
+            <div class="kv-rows">
+              <div class="kv">
+                <span>Ánimo de hoy</span>
+                <strong>{ANIMO_LABELS[hoyDiario.animo]}</strong>
+              </div>
+            </div>
+            {hoyDiario.texto && <p class="entrada-texto recorte">{hoyDiario.texto}</p>}
+            <a class="btn-suave" href="/diario?editar=1">
+              Editar entrada
+            </a>
+          </>
+        ) : (
+          <>
+            <p class="vacio">Aún no has escrito en el diario hoy.</p>
+            <a class="btn-suave" href="/diario">
+              Escribir entrada de hoy
+            </a>
+          </>
+        )
+      }
+    </Card>
+
+    <Card title="Registrado hoy" icon="check" span={2}>
+      {
+        registrosHoy.length === 0 ? (
+          <p class="vacio">
+            Nada todavía. Usa <strong>+ Registrar</strong> para añadir algo.
+          </p>
+        ) : (
+          <ul class="lista">
+            {registrosHoy.map((r) => (
+              <li>
+                <div class="lista-item plano">
+                  <span class="lista-ico acc">
+                    <LifeIcon name={r.icono} size={15} />
+                  </span>
+                  <span class="lista-texto">
+                    <strong>{r.nombre}</strong>
+                    {r.tipo ? ` · ${r.tipo}` : ''}
+                    {r.detalle ? ` · ${r.detalle}` : ''}
+                  </span>
+                  <span class="lista-fecha">{r.hora}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </Card>
+  </div>
+</AppShell>
+
+<style>
+  .lista-item.plano {
+    cursor: default;
+  }
+  .lista-item.plano:hover {
+    background: none;
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+</style>

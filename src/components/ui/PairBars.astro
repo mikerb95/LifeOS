@@ -1,0 +1,23 @@
+---
+interface Props {
+  data: { mes: string; ing: number; gas: number }[];
+  h?: number;
+}
+
+const { data, h = 84 } = Astro.props;
+const max = Math.max(...data.map((d) => Math.max(d.ing, d.gas)), 1);
+---
+
+<div class="pairbars" style={`height:${h}px`}>
+  {
+    data.map((d) => (
+      <div class="pairbar-group">
+        <div class="pairbar-cols">
+          <div class="pairbar ing" style={`height:${(d.ing / max) * 100}%`} title={`Ingresos ${d.ing} €`} />
+          <div class="pairbar gas" style={`height:${(d.gas / max) * 100}%`} title={`Gastos ${d.gas} €`} />
+        </div>
+        <span class="pairbar-mes">{d.mes}</span>
+      </div>
+    ))
+  }
+</div>

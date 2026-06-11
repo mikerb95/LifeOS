@@ -1,0 +1,18 @@
+---
+interface Props {
+  value: number;
+  label: string;
+  sub?: string;
+}
+
+const { value, label, sub } = Astro.props;
+const pct = Math.min(100, Math.max(0, value * 100));
+---
+
+<div class="meter">
+  <div class="meter-top">
+    <span>{label}</span>
+    {sub && <span class="meter-sub">{sub}</span>}
+  </div>
+  <div class="meter-track"><div class="meter-fill" style={`width:${pct}%`}></div></div>
+</div>

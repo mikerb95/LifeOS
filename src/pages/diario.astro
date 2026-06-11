@@ -1,0 +1,115 @@
+---
+import { desc, eq, ne } from 'drizzle-orm';
+import { actions } from 'astro:actions';
+import AppShell from '../layouts/AppShell.astro';
+import Card from '../components/ui/Card.astro';
+import HeatStrip from '../components/ui/HeatStrip.astro';
+import BigStat from '../components/ui/BigStat.astro';
+import { db } from '../db/client';
+import { diarioEntradas } from '../db/schema';
+import { diarioEntryLabel, formatLongDate, heatmapSeries, todayISO } from '../lib/dates';
+import { ANIMO_LABELS } from '../lib/diario';
+
+const result = Astro.getActionResult(actions.diario.guardar);
+const fecha = todayISO();
+
+const [hoy] = await db.select().from(diarioEntradas).where(eq(diarioEntradas.fecha, fecha));
+const editar = !hoy || Astro.url.searchParams.get('editar') === '1';
+
+const recientes = await db
+  .select()
+  .from(diarioEntradas)
+  .where(ne(diarioEntradas.fecha, fecha))
+  .orderBy(desc(diarioEntradas.fecha))
+  .limit(8);
+
+const todas = await db.select({ fecha: diarioEntradas.fecha, animo: diarioEntradas.animo }).from(diarioEntradas);
+const animoMap = new Map(todas.map((e) => [e.fecha, e.animo]));
+const animoHeat = heatmapSeries(animoMap, [0, 3, 4]);
+
+const mesActual = fecha.slice(0, 7);
+const delMes = todas.filter((e) => e.fecha.startsWith(mesActual));
+const mediaMes = delMes.length ? delMes.reduce((s, e) => s + e.animo, 0) / delMes.length : null;
+---
+
+<AppShell activeId="diario">
+  <div class="grid">
+    <Card title="Entrada de hoy" icon="nota" span={2} meta={formatLongDate(fecha)}>
+      {
+        editar ? (
+          <form class="diario-form" method="POST" action={actions.diario.guardar}>
+            <div class="animo-row" role="radiogroup" aria-label="Ánimo de hoy">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <label class="animo-btn">
+                  <input type="radio" name="animo" value={n} checked={hoy?.animo === n} required />
+                  <span class="animo-punto" style={`background: color-mix(in oklab, var(--acc) ${n * 17}%, var(--card))`} />
+                  {ANIMO_LABELS[n]}
+                </label>
+              ))}
+            </div>
+            <label class="qa-field">
+              <span>¿Qué quieres recordar de hoy?</span>
+              <textarea name="texto" rows={4} placeholder="Dos líneas bastan. Lo que ha pasado, cómo te has sentido, una idea suelta…">{hoy?.texto ?? ''}</textarea>
+            </label>
+            {result?.error && <p class="form-error">{result.error.message}</p>}
+            <div class="form-actions">
+              <button class="qa-save corto" type="submit">
+                Guardar entrada
+              </button>
+              {hoy && (
+                <a class="btn-suave" href="/diario">
+                  Cancelar
+                </a>
+              )}
+            </div>
+          </form>
+        ) : (
+          <>
+            <div class="kv-rows">
+              <div class="kv">
+                <span>Ánimo</span>
+                <strong>{ANIMO_LABELS[hoy.animo] || '—'}</strong>
+              </div>
+            </div>
+            {hoy.texto && <p class="entrada-texto">{hoy.texto}</p>}
+            <a class="btn-suave" href="/diario?editar=1">
+              Editar entrada
+            </a>
+          </>
+        )
+      }
+    </Card>
+
+    <Card title="Ánimo a largo plazo" icon="crecimiento">
+      <HeatStrip data={animoHeat} label="Ánimo registrado, últimos 4 meses" />
+      <p class="chart-note">Últimas 18 semanas · más intenso = mejor día</p>
+      <div class="row-stats">
+        <BigStat label="Media del mes" value={mediaMes !== null ? mediaMes.toLocaleString('es-ES', { maximumFractionDigits: 1 }) : '—'} unit="/5">
+          {mediaMes !== null && <span class="delta neutral">cerca de «{ANIMO_LABELS[Math.round(mediaMes)]}»</span>}
+        </BigStat>
+      </div>
+    </Card>
+
+    <Card title="Entradas recientes" icon="doc">
+      {
+        recientes.length === 0 ? (
+          <p class="vacio">Aún no hay entradas anteriores. Las que vayas guardando aparecerán aquí.</p>
+        ) : (
+          <ul class="lista">
+            {recientes.map((en) => (
+              <li>
+                <div class="entrada">
+                  <div class="entrada-head">
+                    <span class="lista-fecha">{diarioEntryLabel(en.fecha)}</span>
+                    <span class="badge animo">{ANIMO_LABELS[en.animo]}</span>
+                  </div>
+                  {en.texto && <p class="entrada-texto recorte">{en.texto}</p>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </Card>
+  </div>
+</AppShell>

@@ -1,0 +1,17 @@
+---
+interface Props {
+  label: string;
+  value: string;
+  unit?: string;
+}
+
+const { label, value, unit } = Astro.props;
+---
+
+<div class="bigstat">
+  <span class="bigstat-label">{label}</span>
+  <span class="bigstat-value"
+    >{value}{unit && <small>{unit}</small>}</span
+  >
+  <slot />
+</div>

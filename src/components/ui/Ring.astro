@@ -1,0 +1,29 @@
+---
+interface Props {
+  value: number;
+  size?: number;
+  stroke?: number;
+}
+
+const { value, size = 64, stroke = 6 } = Astro.props;
+const r = (size - stroke) / 2;
+const c = 2 * Math.PI * r;
+const v = Math.max(0, Math.min(1, value));
+---
+
+<div class="ring" style={`width:${size}px;height:${size}px`}>
+  <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+    <circle cx={size / 2} cy={size / 2} r={r} class="ring-bg" stroke-width={stroke} />
+    <circle
+      cx={size / 2}
+      cy={size / 2}
+      r={r}
+      class="ring-fg"
+      stroke-width={stroke}
+      stroke-dasharray={c}
+      stroke-dashoffset={c * (1 - v)}
+      transform={`rotate(-90 ${size / 2} ${size / 2})`}
+    />
+  </svg>
+  <div class="ring-label"><slot /></div>
+</div>

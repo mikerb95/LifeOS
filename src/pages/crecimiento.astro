@@ -1,0 +1,281 @@
+---
+import { desc, eq } from 'drizzle-orm';
+import { actions } from 'astro:actions';
+import AppShell from '../layouts/AppShell.astro';
+import Card from '../components/ui/Card.astro';
+import HeatStrip from '../components/ui/HeatStrip.astro';
+import BigStat from '../components/ui/BigStat.astro';
+import Meter from '../components/ui/Meter.astro';
+import LifeIcon from '../components/ui/LifeIcon.astro';
+import { db } from '../db/client';
+import { libros, lecturaSesiones, metas } from '../db/schema';
+import { currentStreak, heatmapSeries, todayISO } from '../lib/dates';
+import { fmtNum, clamp01 } from '../lib/format';
+import { getSetting, SETTINGS_KEYS } from '../lib/settings';
+
+const crearLibroResult = Astro.getActionResult(actions.crecimiento.crearLibro);
+const crearMetaResult = Astro.getActionResult(actions.crecimiento.crearMeta);
+const guardarObjetivoLibrosResult = Astro.getActionResult(actions.crecimiento.guardarObjetivoLibros);
+
+const [actual] = await db.select().from(libros).where(eq(libros.estado, 'leyendo')).limit(1);
+const pendientes = await db.select().from(libros).where(eq(libros.estado, 'pendiente'));
+const anteriores = await db
+  .select()
+  .from(libros)
+  .where(eq(libros.estado, 'leido'))
+  .orderBy(desc(libros.fechaTerminado))
+  .limit(3);
+
+const sesiones = await db.select().from(lecturaSesiones);
+const paginasPorDia = new Map<string, number>();
+for (const s of sesiones) {
+  paginasPorDia.set(s.fecha, (paginasPorDia.get(s.fecha) ?? 0) + s.paginas);
+}
+const lecturaHeat = heatmapSeries(paginasPorDia, [0, 5, 20]);
+const racha = currentStreak(new Set(sesiones.map((s) => s.fecha)));
+
+const librosObjetivoAnio = await getSetting(SETTINGS_KEYS.librosObjetivoAnio, 12);
+const librosLeidos = await db.select().from(libros).where(eq(libros.estado, 'leido'));
+const anioActual = todayISO().slice(0, 4);
+const leidosEsteAnio = librosLeidos.filter((l) => l.fechaTerminado?.startsWith(anioActual)).length;
+
+const listaMetas = await db.select().from(metas).orderBy(metas.id);
+---
+
+<AppShell activeId="crecimiento">
+  <div class="grid">
+    <Card title="Leyendo ahora" icon="libro">
+      {
+        actual ? (
+          <>
+            <div class="libro-mini grande">
+              <div class="libro-tapa" aria-hidden="true">
+                <LifeIcon name="libro" size={20} />
+              </div>
+              <div>
+                <strong class="libro-titulo">{actual.titulo}</strong>
+                {actual.autor && <span class="libro-autor">{actual.autor}</span>}
+              </div>
+            </div>
+            <Meter
+              value={actual.totalPaginas ? clamp01(actual.paginaActual / actual.totalPaginas) : 0}
+              label={`Página ${actual.paginaActual}${actual.totalPaginas ? ' de ' + actual.totalPaginas : ''}`}
+              sub={actual.totalPaginas ? `${Math.round((actual.paginaActual / actual.totalPaginas) * 100)} %` : undefined}
+            />
+            <div class="form-actions">
+              <form method="POST" action={actions.crecimiento.terminarLibro}>
+                <input type="hidden" name="id" value={actual.id} />
+                <button class="btn-suave" type="submit">
+                  Marcar como terminado
+                </button>
+              </form>
+              <form method="POST" action={actions.crecimiento.borrarLibro}>
+                <input type="hidden" name="id" value={actual.id} />
+                <button class="icon-btn" type="submit" aria-label="Eliminar libro">
+                  <LifeIcon name="cerrar" size={14} />
+                </button>
+              </form>
+            </div>
+          </>
+        ) : (
+          <p class="vacio">No estás leyendo ningún libro ahora.</p>
+        )
+      }
+
+      {
+        pendientes.length > 0 && (
+          <ul class="lista compacta">
+            {pendientes.map((libro) => (
+              <li>
+                <div class="lista-item plano">
+                  <span class="lista-texto">
+                    <strong>{libro.titulo}</strong>
+                    {libro.autor ? ' · ' + libro.autor : ''}
+                  </span>
+                  <div class="form-actions">
+                    <form method="POST" action={actions.crecimiento.empezarLibro}>
+                      <input type="hidden" name="id" value={libro.id} />
+                      <button class="btn-suave" type="submit">
+                        Empezar
+                      </button>
+                    </form>
+                    <form method="POST" action={actions.crecimiento.borrarLibro}>
+                      <input type="hidden" name="id" value={libro.id} />
+                      <button class="icon-btn" type="submit" aria-label="Eliminar libro">
+                        <LifeIcon name="cerrar" size={14} />
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+
+      {
+        anteriores.length > 0 && (
+          <div class="kv-rows">
+            <div class="kv">
+              <span>Anteriores</span>
+              <strong class="dim-strong">{anteriores.map((l) => l.titulo).join(' · ')}</strong>
+            </div>
+          </div>
+        )
+      }
+
+      <form class="qa-form libro-nuevo" method="POST" action={actions.crecimiento.crearLibro}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Título</span>
+            <input type="text" name="titulo" required />
+          </label>
+          <label class="qa-field">
+            <span>Autor</span>
+            <input type="text" name="autor" placeholder="Opcional" />
+          </label>
+          <label class="qa-field">
+            <span>Páginas totales</span>
+            <input type="number" name="totalPaginas" min="0" step="1" placeholder="Opcional" />
+          </label>
+          <label class="qa-field">
+            <span>Estado</span>
+            <select name="estado">
+              <option value="pendiente">Pendiente</option>
+              <option value="leyendo">Leyendo</option>
+              <option value="leido">Leído</option>
+            </select>
+          </label>
+        </div>
+        {crearLibroResult?.error && <p class="form-error">{crearLibroResult.error.message}</p>}
+        <button class="qa-save" type="submit">
+          Añadir libro
+        </button>
+      </form>
+    </Card>
+
+    <Card title="Hábito de lectura" icon="crecimiento">
+      <HeatStrip data={lecturaHeat} label="Días de lectura, últimos 4 meses" />
+      <p class="chart-note">Últimas 18 semanas</p>
+      <div class="row-stats">
+        <BigStat label="Racha" value={String(racha)} unit="días" />
+        <BigStat label="Este año" value={String(leidosEsteAnio)} unit={`/${librosObjetivoAnio} libros`} />
+      </div>
+      <form class="form-actions objetivo-form" method="POST" action={actions.crecimiento.guardarObjetivoLibros}>
+        <label class="qa-field">
+          <span>Objetivo anual (libros)</span>
+          <input type="number" name="librosObjetivoAnio" min="0" step="1" value={librosObjetivoAnio} />
+        </label>
+        <button class="btn-suave" type="submit">
+          Guardar
+        </button>
+      </form>
+      {guardarObjetivoLibrosResult?.error && <p class="form-error">{guardarObjetivoLibrosResult.error.message}</p>}
+    </Card>
+
+    <Card title="Metas del año" icon="check" span={2}>
+      {
+        listaMetas.length === 0 ? (
+          <p class="vacio">Aún no has añadido ninguna meta.</p>
+        ) : (
+          listaMetas.map((meta) => (
+            <div class="meta-item">
+              <Meter
+                value={clamp01(meta.actual / meta.objetivo)}
+                label={meta.nombre}
+                sub={meta.detalle ?? `${fmtNum(meta.actual)} / ${fmtNum(meta.objetivo)}${meta.unidad ? ' ' + meta.unidad : ''}`}
+              />
+              <div class="form-actions">
+                <form class="meta-actual" method="POST" action={actions.crecimiento.actualizarMeta}>
+                  <input type="hidden" name="id" value={meta.id} />
+                  <label class="qa-field">
+                    <span>Actual</span>
+                    <input type="number" name="actual" step="any" value={meta.actual} />
+                  </label>
+                  <button class="btn-suave" type="submit">
+                    Actualizar
+                  </button>
+                </form>
+                <form method="POST" action={actions.crecimiento.borrarMeta}>
+                  <input type="hidden" name="id" value={meta.id} />
+                  <button class="icon-btn" type="submit" aria-label="Eliminar meta">
+                    <LifeIcon name="cerrar" size={14} />
+                  </button>
+                </form>
+              </div>
+            </div>
+          ))
+        )
+      }
+
+      <form class="qa-form meta-nueva" method="POST" action={actions.crecimiento.crearMeta}>
+        <div class="form-grid">
+          <label class="qa-field">
+            <span>Nombre</span>
+            <input type="text" name="nombre" required />
+          </label>
+          <label class="qa-field">
+            <span>Objetivo</span>
+            <input type="number" name="objetivo" step="any" required />
+          </label>
+          <label class="qa-field">
+            <span>Actual</span>
+            <input type="number" name="actual" step="any" placeholder="0" />
+          </label>
+          <label class="qa-field">
+            <span>Unidad</span>
+            <input type="text" name="unidad" placeholder="libros, €, km…" />
+          </label>
+          <label class="qa-field">
+            <span>Detalle</span>
+            <input type="text" name="detalle" placeholder="Opcional" />
+          </label>
+        </div>
+        {crearMetaResult?.error && <p class="form-error">{crearMetaResult.error.message}</p>}
+        <button class="qa-save" type="submit">
+          Añadir meta
+        </button>
+      </form>
+    </Card>
+  </div>
+</AppShell>
+
+<style>
+  .lista-item.plano {
+    text-decoration: none;
+  }
+  .libro-nuevo,
+  .meta-nueva {
+    margin-top: 4px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .meta-item + .meta-item {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .meta-item .form-actions {
+    margin-top: 8px;
+  }
+  .meta-actual {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+  }
+  .meta-actual .qa-field {
+    flex: 0 0 auto;
+  }
+  .meta-actual input {
+    width: 90px;
+  }
+  .objetivo-form {
+    align-items: flex-end;
+  }
+  .objetivo-form .qa-field {
+    flex: 0 0 auto;
+  }
+  .objetivo-form input {
+    width: 90px;
+  }
+</style>
