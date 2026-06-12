@@ -11,11 +11,18 @@ import {
 } from '../lib/auth';
 
 function clientIdentifier(context: { clientAddress?: string; request: Request }): string {
+  // Prefer the address resolved by the adapter (trusted on Vercel). Accessing it can throw
+  // if the adapter doesn't expose it, so guard it.
   try {
-    return context.clientAddress || context.request.headers.get('x-forwarded-for') || 'global';
+    if (context.clientAddress) return context.clientAddress;
   } catch {
-    return 'global';
+    /* clientAddress no disponible */
   }
+  // x-forwarded-for may be "client, proxy1, proxy2"; key on the first hop (the client)
+  // instead of the whole chain so the throttle bucket is stable.
+  const forwarded = context.request.headers.get('x-forwarded-for');
+  const firstHop = forwarded?.split(',')[0]?.trim();
+  return firstHop || 'global';
 }
 
 export const auth = {
