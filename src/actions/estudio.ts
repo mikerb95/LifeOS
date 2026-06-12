@@ -26,7 +26,8 @@ export const estudio = {
       progreso: z.string().optional(),
       siguiente: z.string().optional(),
     }),
-    handler: async ({ nombre, plataforma, progreso, siguiente }) => {
+    handler: async ({ nombre, plataforma, progreso, siguiente }, context) => {
+      requireAuth(context);
       await db.insert(cursos).values({
         nombre: nombre.trim(),
         plataforma: plataforma?.trim() || null,
