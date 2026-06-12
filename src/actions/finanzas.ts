@@ -101,7 +101,8 @@ export const finanzas = {
       nombre: z.string().min(1),
       fecha: z.string().min(1),
     }),
-    handler: async ({ nombre, fecha }) => {
+    handler: async ({ nombre, fecha }, context) => {
+      requireAuth(context);
       await db.insert(impuestos).values({ nombre, fecha, pagado: false });
       return { success: true };
     },
