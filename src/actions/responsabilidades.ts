@@ -72,7 +72,8 @@ export const responsabilidades = {
   borrarMascotaTarea: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(mascotaTareas).where(eq(mascotaTareas.id, id));
       return { success: true };
     },
@@ -122,7 +123,8 @@ export const responsabilidades = {
   borrarVehiculoTarea: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(vehiculoTareas).where(eq(vehiculoTareas.id, id));
       return { success: true };
     },
@@ -150,7 +152,8 @@ export const responsabilidades = {
   borrarDocumento: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(documentos).where(eq(documentos.id, id));
       return { success: true };
     },
