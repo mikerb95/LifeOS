@@ -1,7 +1,7 @@
 import { defineMiddleware } from 'astro:middleware';
 import { isValidSessionToken, SESSION_COOKIE } from './lib/auth';
 
-const PUBLIC_PATHS = new Set(['/login', '/_actions/auth.login', '/csptest', '/csptest/']);
+const PUBLIC_PATHS = new Set(['/login', '/_actions/auth.login']);
 
 /**
  * SHA-256 hashes of the inline scripts Astro injects to hydrate client islands
