@@ -23,7 +23,8 @@ export const finanzas = {
       fecha: z.string().min(1),
       valor: z.coerce.number(),
     }),
-    handler: async ({ fecha, valor }) => {
+    handler: async ({ fecha, valor }, context) => {
+      requireAuth(context);
       await db
         .insert(patrimonioLogs)
         .values({ fecha, valor })
