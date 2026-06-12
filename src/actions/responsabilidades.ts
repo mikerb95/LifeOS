@@ -86,7 +86,8 @@ export const responsabilidades = {
       aceiteIntervaloKm: z.coerce.number(),
       aceiteUltimoKm: z.coerce.number(),
     }),
-    handler: async ({ nombre, matricula, aceiteIntervaloKm, aceiteUltimoKm }) => {
+    handler: async ({ nombre, matricula, aceiteIntervaloKm, aceiteUltimoKm }, context) => {
+      requireAuth(context);
       await setSetting(SETTINGS_KEYS.vehiculoPerfil, {
         nombre: nombre.trim(),
         matricula: matricula.trim(),
@@ -134,7 +135,8 @@ export const responsabilidades = {
       detalle: z.string().optional(),
       fechaVenc: z.string().optional(),
     }),
-    handler: async ({ nombre, detalle, fechaVenc }) => {
+    handler: async ({ nombre, detalle, fechaVenc }, context) => {
+      requireAuth(context);
       await db.insert(documentos).values({
         nombre: nombre.trim(),
         detalle: detalle?.trim() || null,
