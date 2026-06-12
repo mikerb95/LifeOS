@@ -27,7 +27,8 @@ export const crecimiento = {
       totalPaginas: z.string().optional(),
       estado: z.enum(['pendiente', 'leyendo', 'leido']).optional(),
     }),
-    handler: async ({ titulo, autor, totalPaginas, estado }) => {
+    handler: async ({ titulo, autor, totalPaginas, estado }, context) => {
+      requireAuth(context);
       const totalPaginasValor = parseOptionalNumber(totalPaginas, 'Páginas totales', true);
 
       await db.insert(libros).values({
@@ -78,7 +79,8 @@ export const crecimiento = {
       unidad: z.string().optional(),
       detalle: z.string().optional(),
     }),
-    handler: async ({ nombre, objetivo, actual, unidad, detalle }) => {
+    handler: async ({ nombre, objetivo, actual, unidad, detalle }, context) => {
+      requireAuth(context);
       const actualValor = parseOptionalNumber(actual, 'Actual') ?? 0;
 
       await db.insert(metas).values({
@@ -99,7 +101,8 @@ export const crecimiento = {
       id: z.coerce.number().int(),
       actual: z.coerce.number(),
     }),
-    handler: async ({ id, actual }) => {
+    handler: async ({ id, actual }, context) => {
+      requireAuth(context);
       await db.update(metas).set({ actual }).where(eq(metas.id, id));
       return { success: true };
     },
