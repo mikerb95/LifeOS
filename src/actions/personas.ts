@@ -15,7 +15,8 @@ export const personas = {
       fecha: z.string().min(1, 'Obligatorio.'),
       detalle: z.string().optional(),
     }),
-    handler: async ({ nombre, tipo, fecha, detalle }) => {
+    handler: async ({ nombre, tipo, fecha, detalle }, context) => {
+      requireAuth(context);
       await db.insert(fechasImportantes).values({
         nombre: nombre.trim(),
         tipo,
