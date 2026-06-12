@@ -48,7 +48,8 @@ export const bienestar = {
       kcal: z.string().optional(),
       proteinaG: z.string().optional(),
     }),
-    handler: async ({ nombre, detalle, kcal, proteinaG }) => {
+    handler: async ({ nombre, detalle, kcal, proteinaG }, context) => {
+      requireAuth(context);
       const kcalValor = parseOptionalNumber(kcal, 'Calorías', true);
       const proteinaValor = parseOptionalNumber(proteinaG, 'Proteína');
 
