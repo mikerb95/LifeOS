@@ -59,7 +59,8 @@ export const finanzas = {
   borrarMovimiento: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(movimientos).where(eq(movimientos.id, id));
       return { success: true };
     },
@@ -89,7 +90,8 @@ export const finanzas = {
   borrarDeuda: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(deudas).where(eq(deudas.id, id));
       return { success: true };
     },
@@ -111,7 +113,8 @@ export const finanzas = {
   marcarImpuestoPagado: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.update(impuestos).set({ pagado: true }).where(eq(impuestos.id, id));
       return { success: true };
     },
@@ -120,7 +123,8 @@ export const finanzas = {
   borrarImpuesto: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(impuestos).where(eq(impuestos.id, id));
       return { success: true };
     },
