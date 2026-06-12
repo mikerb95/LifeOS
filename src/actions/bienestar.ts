@@ -68,7 +68,8 @@ export const bienestar = {
   borrarComida: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(comidas).where(eq(comidas.id, id));
       return { success: true };
     },
@@ -77,7 +78,8 @@ export const bienestar = {
   borrarEntreno: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(entrenos).where(eq(entrenos.id, id));
       return { success: true };
     },
@@ -102,7 +104,8 @@ export const bienestar = {
   borrarBiomarcador: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(biomarcadores).where(eq(biomarcadores.id, id));
       return { success: true };
     },
