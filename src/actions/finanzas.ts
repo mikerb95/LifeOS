@@ -73,7 +73,8 @@ export const finanzas = {
       cuota: z.string().optional(),
       fechaFin: z.string().optional(),
     }),
-    handler: async ({ nombre, montoActual, cuota, fechaFin }) => {
+    handler: async ({ nombre, montoActual, cuota, fechaFin }, context) => {
+      requireAuth(context);
       await db.insert(deudas).values({
         nombre,
         montoActual,
