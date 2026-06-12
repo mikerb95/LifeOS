@@ -28,7 +28,8 @@ export const bienestar = {
       kcalObjetivo: z.coerce.number(),
       proteinaObjetivo: z.coerce.number(),
     }),
-    handler: async ({ pesoObjetivo, suenoObjetivo, entrenosObjetivoSemana, kcalObjetivo, proteinaObjetivo }) => {
+    handler: async ({ pesoObjetivo, suenoObjetivo, entrenosObjetivoSemana, kcalObjetivo, proteinaObjetivo }, context) => {
+      requireAuth(context);
       await setSetting(SETTINGS_KEYS.pesoObjetivo, pesoObjetivo);
       await setSetting(SETTINGS_KEYS.suenoObjetivo, suenoObjetivo);
       await setSetting(SETTINGS_KEYS.entrenosObjetivoSemana, entrenosObjetivoSemana);
