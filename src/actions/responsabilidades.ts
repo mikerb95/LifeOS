@@ -24,7 +24,8 @@ export const responsabilidades = {
       nombre: z.string().min(1, 'Obligatorio.'),
       tipo: z.string().min(1, 'Obligatorio.'),
     }),
-    handler: async ({ nombre, tipo }) => {
+    handler: async ({ nombre, tipo }, context) => {
+      requireAuth(context);
       await setSetting(SETTINGS_KEYS.mascotaPerfil, { nombre: nombre.trim(), tipo: tipo.trim() });
       return { success: true };
     },

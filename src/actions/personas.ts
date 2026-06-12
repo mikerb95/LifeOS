@@ -31,7 +31,8 @@ export const personas = {
   borrarFecha: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(fechasImportantes).where(eq(fechasImportantes.id, id));
       return { success: true };
     },
@@ -57,7 +58,8 @@ export const personas = {
   borrarContacto: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(contactos).where(eq(contactos.id, id));
       return { success: true };
     },
@@ -66,7 +68,8 @@ export const personas = {
   marcarContactoHoy: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.update(contactos).set({ ultimoContacto: todayISO() }).where(eq(contactos.id, id));
       return { success: true };
     },
