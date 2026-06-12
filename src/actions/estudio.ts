@@ -76,7 +76,8 @@ export const estudio = {
     input: z.object({
       horasObjetivoSemana: z.coerce.number().min(0),
     }),
-    handler: async ({ horasObjetivoSemana }) => {
+    handler: async ({ horasObjetivoSemana }, context) => {
+      requireAuth(context);
       await setSetting(SETTINGS_KEYS.horasObjetivoSemana, horasObjetivoSemana);
       return { success: true };
     },
