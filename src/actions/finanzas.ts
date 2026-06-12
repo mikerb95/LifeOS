@@ -43,7 +43,8 @@ export const finanzas = {
       tipo: z.enum(['ingreso', 'gasto']),
       importe: z.coerce.number(),
     }),
-    handler: async ({ fecha, concepto, categoria, tipo, importe }) => {
+    handler: async ({ fecha, concepto, categoria, tipo, importe }, context) => {
+      requireAuth(context);
       await db.insert(movimientos).values({
         fecha,
         concepto,
