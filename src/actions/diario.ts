@@ -1,5 +1,6 @@
 import { defineAction } from 'astro:actions';
 import { z } from 'astro:schema';
+import { requireAuth } from '../lib/guard';
 import { db } from '../db/client';
 import { diarioEntradas } from '../db/schema';
 import { todayISO } from '../lib/dates';
