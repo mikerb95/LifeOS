@@ -56,7 +56,8 @@ export const estudio = {
   borrarCurso: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(cursos).where(eq(cursos.id, id));
       return { success: true };
     },
@@ -65,7 +66,8 @@ export const estudio = {
   borrarSesion: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(estudioSesiones).where(eq(estudioSesiones.id, id));
       return { success: true };
     },
