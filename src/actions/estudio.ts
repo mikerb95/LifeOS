@@ -46,7 +46,8 @@ export const estudio = {
       id: z.coerce.number().int(),
       progreso: z.coerce.number().min(0).max(100),
     }),
-    handler: async ({ id, progreso }) => {
+    handler: async ({ id, progreso }, context) => {
+      requireAuth(context);
       await db.update(cursos).set({ progreso: progreso / 100 }).where(eq(cursos.id, id));
       return { success: true };
     },
