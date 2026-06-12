@@ -1,5 +1,6 @@
 import { ActionError, defineAction } from 'astro:actions';
 import { z } from 'astro:schema';
+import { requireAuth } from '../lib/guard';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
