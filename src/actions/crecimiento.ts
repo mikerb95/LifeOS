@@ -46,7 +46,8 @@ export const crecimiento = {
   empezarLibro: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.update(libros).set({ estado: 'leyendo' }).where(eq(libros.id, id));
       return { success: true };
     },
@@ -55,7 +56,8 @@ export const crecimiento = {
   terminarLibro: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.update(libros).set({ estado: 'leido', fechaTerminado: todayISO() }).where(eq(libros.id, id));
       return { success: true };
     },
@@ -64,7 +66,8 @@ export const crecimiento = {
   borrarLibro: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(libros).where(eq(libros.id, id));
       return { success: true };
     },
@@ -111,7 +114,8 @@ export const crecimiento = {
   borrarMeta: defineAction({
     accept: 'form',
     input: z.object({ id: z.coerce.number().int() }),
-    handler: async ({ id }) => {
+    handler: async ({ id }, context) => {
+      requireAuth(context);
       await db.delete(metas).where(eq(metas.id, id));
       return { success: true };
     },
@@ -122,7 +126,8 @@ export const crecimiento = {
     input: z.object({
       librosObjetivoAnio: z.coerce.number().min(0),
     }),
-    handler: async ({ librosObjetivoAnio }) => {
+    handler: async ({ librosObjetivoAnio }, context) => {
+      requireAuth(context);
       await setSetting(SETTINGS_KEYS.librosObjetivoAnio, librosObjetivoAnio);
       return { success: true };
     },
