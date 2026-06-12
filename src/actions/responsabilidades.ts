@@ -37,7 +37,8 @@ export const responsabilidades = {
       fecha: z.string().min(1),
       valorKg: z.coerce.number(),
     }),
-    handler: async ({ fecha, valorKg }) => {
+    handler: async ({ fecha, valorKg }, context) => {
+      requireAuth(context);
       await db
         .insert(mascotaPesoLogs)
         .values({ fecha, valorKg })
