@@ -55,7 +55,8 @@ export const responsabilidades = {
       fechaVenc: z.string().min(1, 'Obligatorio.'),
       frecuenciaDias: z.string().optional(),
     }),
-    handler: async ({ nombre, fechaVenc, frecuenciaDias }) => {
+    handler: async ({ nombre, fechaVenc, frecuenciaDias }, context) => {
+      requireAuth(context);
       const frecuencia = parseOptionalNumber(frecuenciaDias, 'Frecuencia', true);
 
       await db.insert(mascotaTareas).values({
@@ -103,7 +104,8 @@ export const responsabilidades = {
       fechaVenc: z.string().min(1, 'Obligatorio.'),
       frecuenciaDias: z.string().optional(),
     }),
-    handler: async ({ nombre, fechaVenc, frecuenciaDias }) => {
+    handler: async ({ nombre, fechaVenc, frecuenciaDias }, context) => {
+      requireAuth(context);
       const frecuencia = parseOptionalNumber(frecuenciaDias, 'Frecuencia', true);
 
       await db.insert(vehiculoTareas).values({
