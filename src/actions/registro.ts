@@ -37,7 +37,8 @@ export const registro = {
       tipo: z.string().optional(),
       detalle: z.string().optional(),
     }),
-    handler: async ({ tipoId, tipo, detalle }) => {
+    handler: async ({ tipoId, tipo, detalle }, context) => {
+      requireAuth(context);
       const quickType = QUICK_TYPES.find((t) => t.id === tipoId);
       if (!quickType) {
         throw new ActionError({ code: 'BAD_REQUEST', message: 'Tipo de registro no válido.' });
