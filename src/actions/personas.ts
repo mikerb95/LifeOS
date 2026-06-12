@@ -43,7 +43,8 @@ export const personas = {
       nombre: z.string().min(1, 'Obligatorio.'),
       relacion: z.string().optional(),
     }),
-    handler: async ({ nombre, relacion }) => {
+    handler: async ({ nombre, relacion }, context) => {
+      requireAuth(context);
       await db.insert(contactos).values({
         nombre: nombre.trim(),
         relacion: relacion?.trim() || null,
