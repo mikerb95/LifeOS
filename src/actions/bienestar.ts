@@ -92,7 +92,8 @@ export const bienestar = {
       fecha: z.string().min(1),
       estado: z.enum(['ok', 'medio', 'alto']),
     }),
-    handler: async ({ nombre, valor, unidad, fecha, estado }) => {
+    handler: async ({ nombre, valor, unidad, fecha, estado }, context) => {
+      requireAuth(context);
       await db.insert(biomarcadores).values({ nombre, valor, unidad, fecha, estado });
       return { success: true };
     },
